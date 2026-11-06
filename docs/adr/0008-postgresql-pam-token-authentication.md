@@ -112,14 +112,48 @@ or full claim set in transaction state.
 
 ### Configuration
 
-Select policy by a literal profile identifier in the protected PAM stack,
-resolved under a fixed root-owned configuration directory. No token claims,
-client environment or arbitrary paths select trust. Bound reads and strictly
-validate the schema; reject duplicates, unknown fields, symlinks and unsafe
-ownership or write permissions using opened-file checks. Freeze one snapshot per
-authentication/account transaction. Atomic replacement affects later
-transactions; malformed or unavailable new policy denies new authentication.
-The configuration-format review must set exact limits before implementation.
+Policy is supplied as module arguments in the dedicated PAM stack, not in a
+separate configuration file. The stack is already the root-owned trust anchor
+that this ADR requires to be fail-closed, so policy there adds no new place where
+it can be tampered with, and it needs no file-permission, symlink, schema or
+reload handling in the module. HBA `pamservice=<name>` selects the stack, so
+different HBA rules can use different issuers, audiences and scopes, as native
+OAuth does through HBA. libpam reads the stack for each authentication and hands
+the module a stable `argv`, so an edit affects only later transactions.
+
+```
+auth    [success=ok default=die] pg_oauth_pam.so issuer=https://idp.example/ \
+            audience=postgres://primary scope=connect:postgres
+account [success=ok default=die] pg_oauth_pam.so issuer=https://idp.example/ \
+            audience=postgres://primary scope=connect:postgres
+```
+
+Arguments are `name=value` and mirror the OAuth validator's settings, with the
+same meaning, defaults and ranges. The required arguments are `issuer`,
+`audience` and `scope`. Optional arguments are `algorithms`, `token_types`,
+`allow_missing_token_type`, `identity_claim`, `clock_skew_ms`, `max_token_size`
+(PAM default 16 KiB, maximum 65530), `jwks_hosts`, `ca_file`, the cache and
+refresh timing settings, and `allow_insecure_http` (development only, off by
+default). `role_claim` is not supported. No token claim, client environment or
+path argument selects trust.
+
+Parsing is strict and fail-closed. Deny on an unknown or duplicate argument, a
+missing required argument, a malformed or out-of-range value, an embedded NUL or
+control character, or an argument count or value length over a fixed bound. Do
+not read or write any other file for policy; `ca_file` is read only for TLS
+verification of provider endpoints.
+
+The authentication and account lines must carry identical policy arguments. The
+module computes a canonical policy digest at authentication and binds it into the
+transaction state; the account stage denies if its own digest differs. This
+catches a mismatched or edited stack between the two stages.
+
+Policy identity for caching and isolation is the service name plus the canonical
+policy bytes, compared in full (see ADR 0009). Cache capacity is a single
+module-level setting, not a per-stack argument, because shared storage cannot be
+resized per service; its mechanism is defined by the cache design. Verify
+Linux-PAM's line-continuation, quoting and line-length behavior for the packaged
+versions before fixing exact argument limits.
 
 ### Limits and diagnostics
 

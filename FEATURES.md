@@ -98,6 +98,10 @@ PAM contract, requiring a PAM-enabled PostgreSQL build:
   no `sufficient`/`optional` rules, `pam_permit`, system includes or password
   fallback. The module cannot protect a stack that skips it. HBA restrictions
   and `hostssl` with verifying clients remain mandatory deployment practice.
+- Policy (issuer, audience, scopes and the other validator settings) is given as
+  arguments in the dedicated PAM stack, selected per HBA rule by `pamservice`.
+  Unknown, duplicate, missing or malformed arguments deny, and the authentication
+  and account lines must carry identical policy.
 - Account management rechecks expiry from bound transaction state (role,
   profile, policy generation, expiry) and never stores the token or claims.
 - The default credential limit is 16 KiB and the hard maximum is 65530 bytes;
