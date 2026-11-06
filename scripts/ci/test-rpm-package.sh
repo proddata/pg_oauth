@@ -86,7 +86,7 @@ build_package() (
 	fi
 
 	# The PAM subpackage is optional here: retained older releases do not have it.
-	if grep -q '^%package pam$' "$work_dir/rpmbuild/SPECS/pg_oauth_validator.spec"; then
+	if grep -q '^%global with_pam 1$' "$work_dir/rpmbuild/SPECS/pg_oauth_validator.spec"; then
 		pam_name=postgresql18-pg_oauth_validator-pam
 		pam_package=$(find "$work_dir/rpmbuild/RPMS" -type f -name "$pam_name-[0-9]*.rpm")
 		test -n "$pam_package" && test "$(printf '%s\n' "$pam_package" | wc -l)" -eq 1
