@@ -85,6 +85,33 @@ build_package() (
 		exit 1
 	fi
 
+	# The PAM subpackage is optional here: retained older releases do not have it.
+	if grep -q '^%package pam$' "$work_dir/rpmbuild/SPECS/pg_oauth_validator.spec"; then
+		pam_name=postgresql18-pg_oauth_validator-pam
+		pam_package=$(find "$work_dir/rpmbuild/RPMS" -type f -name "$pam_name-[0-9]*.rpm")
+		test -n "$pam_package" && test "$(printf '%s\n' "$pam_package" | wc -l)" -eq 1
+		test "$(rpm -qp --qf '%{NAME}' "$pam_package")" = "$pam_name"
+		test "$(rpm -qp --qf '%{ARCH}' "$pam_package")" = "$(rpm --eval '%{_arch}')"
+		test -z "$(rpm -qp --scripts "$pam_package")"
+		pam_requires=$work_dir/pam-requires
+		rpm -qp --requires "$pam_package" >"$pam_requires"
+		grep -Fx "$server$(rpm --eval '%{?_isa}') >= 18.6" "$pam_requires"
+		grep -Fx "$server$(rpm --eval '%{?_isa}') < 19" "$pam_requires"
+		# Independent artifacts: neither package requires the other.
+		if grep -E 'pg_oauth_validator|lib(jwt|jansson)\b' "$pam_requires"; then
+			echo 'error: PAM package has an unexpected package requirement' >&2
+			exit 1
+		fi
+		if grep -E 'pg_oauth_validator-pam' "$requires"; then
+			echo 'error: validator package requires the PAM package' >&2
+			exit 1
+		fi
+		rpm -qp --provides "$pam_package" >"$work_dir/pam-provides"
+		grep -Fx 'bundled(jansson) = 2.15.1' "$work_dir/pam-provides"
+		grep -Fx 'bundled(libjwt) = 3.3.3' "$work_dir/pam-provides"
+		printf '%s\n' "$pam_package" >"$work_dir/pam-package-path"
+	fi
+
 	# The SRPM must carry all three actual source archives, not only download URLs.
 	srpm=$(find "$work_dir/rpmbuild/SRPMS" -type f -name '*.src.rpm')
 	test -n "$srpm" && test "$(printf '%s\n' "$srpm" | wc -l)" -eq 1
@@ -171,7 +198,60 @@ if rpm -q "$package_name"; then
 	echo 'error: package remains installed after removal' >&2
 	exit 1
 fi
-echo 'RPM offline build, source integrity, install, OAuth, and removal checks passed'
+# The PAM subpackage must install, work and remove on its own, with the validator
+# package absent (ADR 0008). Older retained baselines do not build it.
+if test -f "$work_dir/baseline/pam-package-path"; then
+	pam_package=$(cat "$work_dir/baseline/pam-package-path")
+	pam_name=postgresql18-pg_oauth_validator-pam
+	pam_library="$(rpm --eval '%{_libdir}')/security/pg_oauth_pam.so"
+	test ! -e "$pam_library"
+	rpm --install "$pam_package"
+	rpm --verify "$pam_name"
+	test -f "$pam_library"
+	test -f "/usr/share/licenses/$pam_name/LICENSE"
+	test -f "/usr/share/doc/$pam_name/pam.md"
+	if rpm -q "$package_name"; then
+		echo 'error: the PAM package pulled in the validator package' >&2
+		exit 1
+	fi
+	exports=$(nm -D --defined-only "$pam_library" | awk '{print $3}' | LC_ALL=C sort | tr '\n' ' ')
+	test "$exports" = 'pam_sm_acct_mgmt pam_sm_authenticate pam_sm_setcred ' || {
+		echo "error: unexpected PAM module exports: $exports" >&2
+		exit 1
+	}
+	readelf --dynamic "$pam_library" >"$work_dir/pam-dynamic"
+	if grep -E '\((RPATH|RUNPATH)\)' "$work_dir/pam-dynamic"; then
+		echo 'error: packaged PAM module has a private runtime search path' >&2
+		exit 1
+	fi
+	ldd "$pam_library" >"$work_dir/pam-ldd"
+	if grep -E 'not found|lib(jwt|jansson)' "$work_dir/pam-ldd"; then
+		echo 'error: invalid PAM module runtime linkage' >&2
+		exit 1
+	fi
+	if find "/usr/share/doc/$pam_name" "/usr/share/licenses/$pam_name" \
+		"$pam_library" -type f -perm /022 | grep -q .; then
+		echo 'error: writable installed PAM package files' >&2
+		exit 1
+	fi
+	# The real-connection suite needs a disposable container; the SELinux VM
+	# gate installs the tested validator RPM only and does not run it.
+	if test -f /.dockerenv; then
+		PG_CONFIG="$PG_CONFIG_PATH" PAM_MODULE="$pam_library" \
+			OAUTH_TEST_PAM_DISPOSABLE=1 PYTHONPYCACHEPREFIX=/source/.pycache \
+			python3 -m pytest -q -o cache_dir=/source/.pytest_cache /source/tests/pam
+	fi
+	rpm --verify "$pam_name"
+	rpm --erase "$pam_name"
+	test ! -e "$pam_library"
+	test ! -e "/usr/share/doc/$pam_name"
+	test ! -e "/usr/share/licenses/$pam_name"
+	if rpm -q "$pam_name"; then
+		echo 'error: PAM package remains installed after removal' >&2
+		exit 1
+	fi
+fi
+echo 'RPM offline build, source integrity, install, OAuth, PAM and removal checks passed'
 # Candidate export happens only after every install/runtime/removal check passed.
 # This is separate from the single-artifact handoff used by the SELinux VM.
 if test -n "${RPM_CANDIDATE_EXPORT_DIR:-}"; then

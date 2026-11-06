@@ -27,6 +27,7 @@ class ReleaseTest(unittest.TestCase):
     def bundle(self, name, version="0.1.3", revision="c" * 40):
         root = self.root / name
         for relative in (f"RPMS/aarch64/postgresql18-pg_oauth_validator-{version}-1.aarch64.rpm",
+                         f"RPMS/aarch64/postgresql18-pg_oauth_validator-pam-{version}-1.aarch64.rpm",
                          f"SRPMS/postgresql18-pg_oauth_validator-{version}-1.src.rpm",
                          "inputs/INPUTS.sha256", "inputs/SOURCES/SHA256SUMS", "BUILD-ENVIRONMENT.txt"):
             path = root / relative
