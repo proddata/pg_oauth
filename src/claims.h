@@ -60,4 +60,7 @@ extern PgOAuthClaimsError pg_oauth_claims_validate(
 												   PgOAuthValidatedClaims *claims);
 extern const char *pg_oauth_claims_error_code(PgOAuthClaimsError error);
 
+extern bool pg_oauth_claims_expired(int64_t now, int64_t expires_at,
+									uint32_t skew_seconds);
+
 #endif							/* PG_OAUTH_VALIDATOR_CLAIMS_H */

@@ -57,6 +57,18 @@ valid_policy(const PgOAuthClaimsPolicy *policy)
 		  policy->max_role_size > 0));
 }
 
+/*
+ * The single expiry predicate: expired once the clock reaches exp and the
+ * elapsed time is at least the skew. Shared with the PAM account stage so the
+ * two cannot disagree.
+ */
+bool
+pg_oauth_claims_expired(int64_t now, int64_t expires_at, uint32_t skew_seconds)
+{
+	return now >= expires_at &&
+		(uint64_t) (now - expires_at) >= skew_seconds;
+}
+
 static PgOAuthClaimsError
 validate_requested_role(const json_t *payload,
 						const PgOAuthClaimsPolicy *policy)
@@ -346,9 +358,8 @@ pg_oauth_claims_validate(const json_t *verified_payload,
 		return PG_OAUTH_CLAIMS_MISSING_EXPIRY;
 	if (!json_is_integer(value) || (numeric_date = json_integer_value(value)) <= 0)
 		return PG_OAUTH_CLAIMS_INVALID_EXPIRY;
-	if (policy->current_time >= numeric_date &&
-		(uint64_t) (policy->current_time - numeric_date) >=
-		policy->clock_skew_seconds)
+	if (pg_oauth_claims_expired(policy->current_time, numeric_date,
+								policy->clock_skew_seconds))
 		return PG_OAUTH_CLAIMS_EXPIRED;
 	claims->expires_at = numeric_date;
 

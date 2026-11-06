@@ -45,6 +45,13 @@ typedef struct PgOAuthPamPolicy
 extern PgOAuthPamPolicyError pg_oauth_pam_policy_parse(
 													   int argc, const char **argv, PgOAuthPamPolicy *policy);
 
+/*
+ * SHA-256 over every validated policy field in a fixed order with explicit
+ * lengths, so two stack lines with the same effective policy compare equal and
+ * any difference (including list order) does not. Returns false on failure.
+ */
+extern bool pg_oauth_pam_policy_digest(const PgOAuthPamPolicy *policy, uint8_t out[32]);
+
 /* Stable, non-sensitive diagnostic code. */
 extern const char *pg_oauth_pam_policy_error_code(PgOAuthPamPolicyError error);
 

@@ -4,6 +4,8 @@
 #include <limits.h>
 #include <string.h>
 
+#include <openssl/evp.h>
+
 #include "pam_credential.h"
 #include "pam_policy.h"
 
@@ -189,6 +191,63 @@ pg_oauth_pam_policy_parse(int argc, const char **argv, PgOAuthPamPolicy *policy)
 		return PG_OAUTH_PAM_POLICY_TOKEN_SIZE_TOO_LARGE;
 	}
 	return PG_OAUTH_PAM_POLICY_OK;
+}
+
+static bool
+digest_field(EVP_MD_CTX *context, const char *name, const void *value, size_t length)
+{
+	uint64_t	name_length = strlen(name);
+	uint64_t	value_length = length;
+
+	return EVP_DigestUpdate(context, &name_length, sizeof(name_length)) == 1 &&
+		EVP_DigestUpdate(context, name, (size_t) name_length) == 1 &&
+		EVP_DigestUpdate(context, &value_length, sizeof(value_length)) == 1 &&
+		(length == 0 || EVP_DigestUpdate(context, value, length) == 1);
+}
+
+#define DIGEST_STRING(name, value) \
+	digest_field(context, name, (value), strlen(value))
+#define DIGEST_INT(name, value) \
+	(digest_integer = (int64_t) (value), \
+	 digest_field(context, name, &digest_integer, sizeof(digest_integer)))
+
+bool
+pg_oauth_pam_policy_digest(const PgOAuthPamPolicy *policy, uint8_t out[32])
+{
+	const PgOAuthValidationPolicy *v;
+	EVP_MD_CTX *context;
+	unsigned int length = 0;
+	int64_t		digest_integer;
+	bool		ok;
+
+	if (policy == NULL || out == NULL || policy->validation.issuer == NULL)
+		return false;
+	v = &policy->validation;
+	context = EVP_MD_CTX_new();
+	if (context == NULL)
+		return false;
+	ok = EVP_DigestInit_ex(context, EVP_sha256(), NULL) == 1 &&
+		DIGEST_STRING("issuer", v->issuer) &&
+		DIGEST_STRING("audience", v->audiences) &&
+		DIGEST_STRING("scope", v->required_scopes) &&
+		DIGEST_STRING("identity_claim", v->identity_claim) &&
+		DIGEST_STRING("jwks_hosts", v->allowed_jwks_hosts) &&
+		DIGEST_STRING("ca_file", v->ca_file) &&
+		DIGEST_INT("algorithms", v->allowed_algorithms) &&
+		DIGEST_INT("token_types", v->allowed_token_types) &&
+		DIGEST_INT("allow_missing_token_type", v->allow_missing_token_type) &&
+		DIGEST_INT("clock_skew_ms", v->clock_skew_ms) &&
+		DIGEST_INT("max_token_size", v->max_token_size) &&
+		DIGEST_INT("metadata_default_ttl_ms", v->metadata_default_ttl_ms) &&
+		DIGEST_INT("jwks_default_ttl_ms", v->jwks_default_ttl_ms) &&
+		DIGEST_INT("cache_max_ttl_ms", v->cache_max_ttl_ms) &&
+		DIGEST_INT("jwks_stale_grace_ms", v->jwks_stale_grace_ms) &&
+		DIGEST_INT("unknown_kid_refresh_cooldown_ms", v->unknown_kid_refresh_cooldown_ms) &&
+		DIGEST_INT("refresh_wait_timeout_ms", v->refresh_wait_timeout_ms) &&
+		DIGEST_INT("allow_insecure_http", v->allow_insecure_http) &&
+		EVP_DigestFinal_ex(context, out, &length) == 1 && length == 32;
+	EVP_MD_CTX_free(context);
+	return ok;
 }
 
 const char *
