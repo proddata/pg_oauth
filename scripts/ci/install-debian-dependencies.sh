@@ -68,6 +68,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
 	libclang-rt-dev=1:14.0-55.7~deb12u1 \
 	libcurl4-openssl-dev=7.88.1-10+deb12u15 \
 	libkrb5-dev=1.20.1-2+deb12u5 \
+	libpam0g-dev=1.5.2-6+deb12u2 \
 	libssl-dev=$ssl_version \
 	openssl=$ssl_version \
 	pkg-config=1.8.1-1 \
@@ -94,6 +95,7 @@ check_version libssl-dev "$ssl_version"
 check_version bison 2:3.8.2+dfsg-1+b1
 check_version flex 2.6.4-8.2
 check_version libpq-dev "$pg_dev_version"
+check_version libpam0g-dev 1.5.2-6+deb12u2
 check_version postgresql-server-dev-$pg_major "$pg_dev_version"
 check_version python3-pytest-xdist 3.1.0-1
 
