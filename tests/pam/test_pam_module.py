@@ -60,6 +60,46 @@ class Libpq:
         self.lib.PQfinish.argtypes = [ctypes.c_void_p]
         self.lib.PQfinish.restype = None
 
+    def query(self, cluster, password, sql, user="appuser"):
+        """Connect over verified TLS, run one statement, return its first value."""
+        lib = self.lib
+        lib.PQexec.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        lib.PQexec.restype = ctypes.c_void_p
+        lib.PQresultStatus.argtypes = [ctypes.c_void_p]
+        lib.PQresultStatus.restype = ctypes.c_int
+        lib.PQgetvalue.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+        lib.PQgetvalue.restype = ctypes.c_char_p
+        lib.PQclear.argtypes = [ctypes.c_void_p]
+        lib.PQclear.restype = None
+        conn = self._open(cluster, password, user)
+        try:
+            if lib.PQstatus(conn) != 0:
+                raise RuntimeError(lib.PQerrorMessage(conn).decode())
+            result = lib.PQexec(conn, sql.encode())
+            try:
+                if lib.PQresultStatus(result) != 2:  # PGRES_TUPLES_OK
+                    raise RuntimeError(lib.PQerrorMessage(conn).decode())
+                return lib.PQgetvalue(result, 0, 0).decode()
+            finally:
+                lib.PQclear(result)
+        finally:
+            lib.PQfinish(conn)
+
+    def _open(self, cluster, password, user):
+        pairs = [(b"host", b"localhost"), (b"port", str(cluster.port).encode()),
+                 (b"dbname", b"postgres"), (b"user", user.encode()),
+                 (b"sslmode", b"verify-full"),
+                 (b"sslrootcert", str(cluster.server_certificate).encode()),
+                 (b"connect_timeout", b"5"),
+                 (b"passfile", b"/nonexistent-pg-oauth-pam-passfile"),
+                 (b"password", password)]
+        array = ctypes.c_char_p * (len(pairs) + 1)
+        conn = self.lib.PQconnectdbParams(array(*(key for key, _ in pairs), None),
+                                        array(*(value for _, value in pairs), None), 0)
+        if not conn:
+            raise RuntimeError("libpq connection allocation failed")
+        return conn
+
     def connect(self, cluster, password, user="appuser"):
         pairs = [(b"host", b"localhost"), (b"port", str(cluster.port).encode()),
                  (b"dbname", b"postgres"), (b"user", user.encode()),

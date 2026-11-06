@@ -232,8 +232,11 @@ the client no detail. The module writes stable diagnostic codes to the system lo
 
 - No RPM, SELinux policy or release artifact exists for this module yet.
 - Bearer tokens can be replayed until they expire. Use short-lived tokens and TLS.
-- PostgreSQL's PAM logging records the database username, not the external
-  identity, so audit trails differ from the native validator's.
+- PostgreSQL records the database role as the PAM identity, not the external
+  identity: `system_user` is `pam:<role>` (PostgreSQL 16 and later) and the
+  connection log shows `identity="<role>" method=pam`. In delegated roles mode too
+  it is the role, never the token's subject, so audit trails differ from the native
+  validator's `oauth:<identity>`. Verified by tests on PostgreSQL 15 to 19.
 
 ## Upgrade and rollback
 

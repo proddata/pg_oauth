@@ -514,3 +514,27 @@ def test_delegated_roles_are_opt_in_per_stack(environment):
     with stack_with(environment, "role_claim=pg_roles"):
         assert connect(environment, token)[0]
     assert not connect(environment, token)[0]
+
+
+def test_session_identity_is_the_role_with_the_pam_prefix(environment):
+    """PostgreSQL records the database role as the PAM identity (not the token's
+    subject); system_user exists from PostgreSQL 16."""
+    cluster, client, idp, *_ = environment
+    token = idp.sign(subject="appuser").encode()
+    assert client.query(cluster, token, "SELECT current_user") == "appuser"
+    if cluster.major >= 16:
+        assert client.query(cluster, token, "SELECT system_user") == "pam:appuser"
+    assert 'identity="appuser" method=pam' in cluster.logs()
+
+
+def test_delegated_session_identity_is_the_role_not_the_subject(environment):
+    cluster, client, idp, *_ = environment
+    with stack_with(environment, "role_claim=pg_roles"):
+        token = delegated(idp, ["other"]).encode()
+        assert client.query(cluster, token, "SELECT current_user", user="other") == "other"
+        if cluster.major >= 16:
+            identity = client.query(cluster, token, "SELECT system_user", user="other")
+            assert identity == "pam:other"
+            assert "someone-else" not in identity
+    assert 'identity="other" method=pam' in cluster.logs()
+    assert "someone-else" not in cluster.logs()
