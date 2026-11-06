@@ -29,7 +29,7 @@ Source3:        SHA256SUMS
 ExclusiveArch:  x86_64 aarch64
 BuildRequires:  gcc make cmake binutils diffutils findutils gzip tar
 BuildRequires:  clang llvm redhat-rpm-config
-BuildRequires:  pkgconf-pkg-config openssl-devel libcurl-devel krb5-devel pam-devel python3
+BuildRequires:  pkgconf-pkg-config openssl-devel libcurl-devel krb5-devel python3
 BuildRequires:  %{pg_devel} >= 18.6
 BuildRequires:  %{pg_devel} < 19
 Requires:       %{pg_server}%{?_isa} >= 18.6
@@ -47,25 +47,6 @@ Provides:       bundled(libjwt) = 3.3.3
 Validates signed OAuth JWT access tokens for an explicitly trusted issuer and
 PostgreSQL resource. Installation does not enable OAuth, edit configuration,
 or restart PostgreSQL. RPM-family support remains experimental.
-
-# The PAM module is an independent artifact (ADR 0008): it does not require this
-# package, and this package does not require it, so either installs alone.
-%package pam
-Summary:        PAM module that validates JWT access tokens for PostgreSQL 18
-Requires:       %{pg_server}%{?_isa} >= 18.6
-Requires:       %{pg_server}%{?_isa} < 19
-%if 0%{?fedora}
-Requires:       postgresql-server(:MODULE_COMPAT_18)
-%endif
-Requires:       libcurl%{?_isa} >= 7.87.0
-Provides:       bundled(jansson) = 2.15.1
-Provides:       bundled(libjwt) = 3.3.3
-
-%description pam
-A Linux-PAM module that authenticates PostgreSQL connections whose password is
-a signed JWT access token, using the same validation as the native validator.
-Installation does not edit pg_hba.conf, create a PAM service, or restart
-PostgreSQL. Experimental; not qualified under SELinux enforcing mode.
 
 %prep
 # RPM Source entries are included in the SRPM (RPM spec manual, Source tag).
@@ -104,7 +85,6 @@ test "$(pkg-config --variable=prefix libjwt)" = "$PWD/deps"
 # The module uses system curl/OpenSSL, so PGDG's private libpq RPATH is not
 # needed. Disable it through PGXS rather than bypass RPM's RPATH checks.
 make PG_CONFIG=%{pg_config} EXPECTED_PG_MAJOR=18 enable_rpath=no all
-make PG_CONFIG=%{pg_config} EXPECTED_PG_MAJOR=18 pam-module
 mkdir THIRD-PARTY-LICENSES
 cp deps/share/doc/jansson/LICENSE THIRD-PARTY-LICENSES/JANSSON
 cp deps/share/doc/libjwt/LICENSE THIRD-PARTY-LICENSES/LIBJWT-MPL-2.0
@@ -126,8 +106,6 @@ export PKG_CONFIG_PATH="$PWD/deps/lib/pkgconfig:$PWD/deps/lib64/pkgconfig"
 export PKG_CONFIG_LIBDIR=%{_libdir}/pkgconfig:%{_datadir}/pkgconfig
 # Own documentation in the package directory, not PGXS's shared contrib path.
 make PG_CONFIG=%{pg_config} EXPECTED_PG_MAJOR=18 enable_rpath=no install DOCS= DESTDIR=%{buildroot}
-make PG_CONFIG=%{pg_config} EXPECTED_PG_MAJOR=18 install-pam \
-    DESTDIR=%{buildroot} PAM_MODULE_DIR=%{_libdir}/security
 find %{buildroot}%{pg_pkglibdir} -type f | LC_ALL=C sort | \
     sed 's|^%{buildroot}||' > module-files
 
@@ -136,14 +114,7 @@ export PKG_CONFIG_PATH="$PWD/deps/lib/pkgconfig:$PWD/deps/lib64/pkgconfig"
 export PKG_CONFIG_LIBDIR=%{_libdir}/pkgconfig:%{_datadir}/pkgconfig
 export LD_LIBRARY_PATH="$PWD/deps/lib:$PWD/deps/lib64"
 make PG_CONFIG=%{pg_config} EXPECTED_PG_MAJOR=18 enable_rpath=no verify-dev packagecheck
-make PG_CONFIG=%{pg_config} EXPECTED_PG_MAJOR=18 check-pam-credential \
-    check-pam-policy check-pam-transaction check-pam-symbols check-pam-install
 
 %files -f module-files
 %license LICENSE THIRD-PARTY-LICENSES
 %doc README.md FEATURES.md PROVIDER-COMPATIBILITY.md THIRD-PARTY-NOTICES.md docs BUILD-SOURCE
-
-%files pam
-%license LICENSE THIRD-PARTY-LICENSES
-%doc docs/pam.md
-%{_libdir}/security/pg_oauth_pam.so

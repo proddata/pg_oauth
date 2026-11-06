@@ -21,20 +21,12 @@ def inventory(root):
                 with path.open("rb") as stream:
                     digest = hashlib.file_digest(stream, "sha256").hexdigest()
                 files[path.relative_to(root).as_posix()] = digest
-    packages = [name for name in files
-                if name.startswith("RPMS/") and name.endswith(".rpm")]
-    binaries = [name for name in packages
-                if re.fullmatch(r"postgresql18-pg_oauth_validator-[0-9].*\.rpm",
-                                pathlib.PurePosixPath(name).name)]
-    # The optional PAM subpackage is independent of the validator. Earlier
-    # releases, which retained baselines are rebuilt from, have none.
-    pam = [name for name in packages
-           if re.fullmatch(r"postgresql18-pg_oauth_validator-pam-[0-9].*\.rpm",
-                           pathlib.PurePosixPath(name).name)]
+    binaries = [name for name in files if name.startswith("RPMS/") and
+                re.fullmatch(r"postgresql18-pg_oauth_validator-[0-9].*\.rpm",
+                             pathlib.PurePosixPath(name).name)]
     sources = [name for name in files if name.startswith("SRPMS/") and name.endswith(".src.rpm")]
-    if len(binaries) != 1 or len(pam) > 1 or len(sources) != 1 or \
-            len(packages) != len(binaries) + len(pam):
-        raise ValueError("candidate requires one validator RPM, at most one PAM RPM and one SRPM")
+    if len(binaries) != 1 or len(sources) != 1:
+        raise ValueError("candidate requires exactly one validator RPM and SRPM")
     for name in ("inputs/INPUTS.sha256", "inputs/SOURCES/SHA256SUMS",
                  "inputs/SPECS/pg_oauth_validator.spec"):
         if name not in files:
