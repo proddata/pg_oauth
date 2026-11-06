@@ -63,6 +63,18 @@ class Libpq:
             self.lib.PQfinish(conn)
 
 
+POLICY = ("issuer=https://issuer.example/ audience=postgres://primary "
+          "scope=connect:postgres")
+
+
+def stack(module, arguments=POLICY):
+    # Dedicated fail-closed stack: success-only controls, no includes (ADR 0008).
+    # The continuation line also exercises libpam's argument handling.
+    return (f"auth [success=ok default=die] {module} {arguments.split()[0]} \\\n"
+            f"    {' '.join(arguments.split()[1:])}\n"
+            f"account [success=ok default=die] {module} {arguments}\n")
+
+
 @pytest.fixture(scope="module")
 def environment(tmp_path_factory):
     require_disposable()
@@ -89,8 +101,7 @@ def environment(tmp_path_factory):
         server_pid = int((cluster.data / "postmaster.pid").read_text().splitlines()[0])
         assert pathlib.Path(f"/proc/{server_pid}").stat().st_uid != 0
         # Dedicated fail-closed stack: success-only controls, no includes (ADR 0008).
-        service_file.write_text(f"auth [success=ok default=die] {module}\n"
-                                f"account [success=ok default=die] {module}\n")
+        service_file.write_text(stack(module))
         service_file.chmod(0o644)
         yield cluster, Libpq(pg_config), service_file
     finally:
@@ -125,6 +136,27 @@ def test_missing_wrong_user_and_empty_credentials_are_denied(environment):
         assert not accepted
 
 
+@pytest.mark.parametrize("arguments", [
+    "",
+    POLICY + " unknown=1",
+    POLICY + " issuer=https://other.example/",
+    POLICY + " max_token_size=65531",
+    POLICY + " clock_skew_ms=-1",
+    "issuer=https://issuer.example/ audience=postgres://primary",
+])
+def test_invalid_policy_denies(environment, arguments):
+    cluster, client, service_file = environment
+    original = service_file.read_text()
+    module = original.split()[2]
+    service_file.write_text(stack(module, arguments or "x"))
+    try:
+        accepted, error = client.connect(cluster, CANARY)
+        assert not accepted
+        assert CANARY.decode() not in error + cluster.logs()
+    finally:
+        service_file.write_text(original)
+
+
 def test_denial_does_not_poison_later_attempts(environment):
     cluster, client, _ = environment
     for _ in range(3):
@@ -137,7 +169,8 @@ def test_denial_does_not_poison_later_attempts(environment):
 def test_account_stage_alone_cannot_authenticate(environment):
     cluster, client, service_file = environment
     original = service_file.read_text()
-    module_line = original.splitlines()[1]
+    module_line = next(line for line in original.splitlines()
+                       if line.startswith("account "))
     # A bypassed auth stack must not let account management allow the login.
     # pam_permit is confined to this negative test, never a shipped stack.
     service_file.write_text("auth required pam_permit.so\n" + module_line + "\n")

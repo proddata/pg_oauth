@@ -29,9 +29,10 @@ VALIDATOR_LIBRARY ?= $(CURDIR)/$(MODULE_big)$(DLSUFFIX)
 # The PAM module is an opt-in, independent artifact (ADR 0008); `all` never
 # builds it, so OAuth-only builds need no PAM development files.
 PAM_MODULE = pam/pg_oauth_pam$(DLSUFFIX)
-PAM_SOURCES = pam/pg_oauth_pam.c pam/pam_credential.c
-PAM_HEADERS = pam/pam_credential.h
+PAM_SOURCES = pam/pg_oauth_pam.c pam/pam_credential.c pam/pam_policy.c src/policy.c
+PAM_HEADERS = pam/pam_credential.h pam/pam_policy.h src/policy.h src/algorithms.h src/jwt_envelope.h
 PAM_CREDENTIAL_TEST_BIN = tests/pam/credential_test
+PAM_POLICY_TEST_BIN = tests/pam/policy_test
 LIBJWT_SPIKE_BIN = tests/dependency/libjwt_spike
 LIBJWT_FUZZ_BIN = tests/fuzz/libjwt_inputs_fuzz
 JWT_ENVELOPE_FUZZ_BIN = tests/fuzz/jwt_envelope_fuzz
@@ -74,7 +75,7 @@ EXTRA_CLEAN = $(TEST_BIN) $(POLICY_TEST_BIN) $(JWT_ENVELOPE_TEST_BIN) \
 	$(LIBJWT_FUZZ_CORPUS) $(JWT_ENVELOPE_FUZZ_CORPUS) \
 	$(JWKS_FUZZ_CORPUS) $(CLAIMS_FUZZ_CORPUS) $(IDENTITY_FUZZ_CORPUS) \
 	$(METADATA_FUZZ_CORPUS) \
-	$(PAM_MODULE) $(PAM_CREDENTIAL_TEST_BIN) \
+	$(PAM_MODULE) $(PAM_CREDENTIAL_TEST_BIN) $(PAM_POLICY_TEST_BIN) \
 	.ci-analysis \
 	tests/integration/__pycache__ tests/interop/keycloak/__pycache__
 
@@ -99,7 +100,7 @@ PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
-.PHONY: pam-module check-pam-credential check-pam-symbols pam-integrationcheck \
+.PHONY: pam-module check-pam-credential check-pam-policy check-pam-symbols pam-integrationcheck \
 	pam-check-pg18 pam-check-pg19 build-pg18 build-pg19 check-cache-key check-cache-state check-fail-closed check-http-freshness check-jwks check-jwt-envelope \
 	check-signature \
 	check-claims check-http-transport check-libcurl-runtime check-identity check-issuer-key check-metadata \
@@ -187,9 +188,10 @@ pam-module: $(PAM_MODULE)
 
 $(PAM_MODULE): $(PAM_SOURCES) $(PAM_HEADERS) pam/pg_oauth_pam.exports
 	@mkdir -p pam
-	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow -O2 -fPIC -shared \
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(PG_CPPFLAGS) -I$(includedir_server) \
+		-I$(srcdir)/src -I$(srcdir)/pam -fPIC -shared \
 		-Wl,-Bsymbolic -Wl,--version-script=$(srcdir)/pam/pg_oauth_pam.exports \
-		-I$(srcdir)/pam -o $@ $(filter %.c,$^) -lpam
+		-o $@ $(filter %.c,$^) -lpam
 
 $(PAM_CREDENTIAL_TEST_BIN): tests/pam/credential_test.c pam/pam_credential.c $(PAM_HEADERS)
 	@mkdir -p tests/pam
@@ -198,6 +200,14 @@ $(PAM_CREDENTIAL_TEST_BIN): tests/pam/credential_test.c pam/pam_credential.c $(P
 
 check-pam-credential: $(PAM_CREDENTIAL_TEST_BIN)
 	./$(PAM_CREDENTIAL_TEST_BIN)
+
+$(PAM_POLICY_TEST_BIN): tests/pam/policy_test.c pam/pam_policy.c src/policy.c $(PAM_HEADERS)
+	@mkdir -p tests/pam
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(PG_CPPFLAGS) -I$(includedir_server) \
+		-I$(srcdir)/src -I$(srcdir)/pam -o $@ $(filter %.c,$^)
+
+check-pam-policy: $(PAM_POLICY_TEST_BIN)
+	./$(PAM_POLICY_TEST_BIN)
 
 # Only the three PAM entry points may be visible; no validator or library
 # symbol can interpose into another module loaded in the same process.
@@ -583,12 +593,12 @@ pam-check-pg18:
 	@mkdir -p "$(BUILD_ROOT)/pg18/src" "$(BUILD_ROOT)/pg18/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg18" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG18_CONFIG)" EXPECTED_PG_MAJOR=18 \
-		check-pam-credential check-pam-symbols pam-integrationcheck
+		check-pam-credential check-pam-policy check-pam-symbols pam-integrationcheck
 
 pam-check-pg19:
 	@mkdir -p "$(BUILD_ROOT)/pg19/src" "$(BUILD_ROOT)/pg19/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg19" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG19_CONFIG)" EXPECTED_PG_MAJOR=19 \
-		check-pam-credential check-pam-symbols pam-integrationcheck
+		check-pam-credential check-pam-policy check-pam-symbols pam-integrationcheck
 
 verify-all: test-pg18 test-pg19

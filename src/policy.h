@@ -4,8 +4,21 @@
 #include "postgres.h"
 
 #include "algorithms.h"
-#include "hba_policy.h"
 #include "jwt_envelope.h"
+
+/*
+ * Per-connection policy inputs owned by the host (the matched pg_hba.conf rule
+ * for OAuth, the PAM stack arguments for PAM).  These pointers are valid only
+ * for the duration of the call and must not be modified.  This type lives here,
+ * not in hba_policy.h, so the policy builder has no libpq/oauth.h dependency.
+ */
+typedef struct PgOAuthHbaPolicy
+{
+	const char *issuer;
+	const char *required_scopes;
+	const char *policy_name;
+	bool		delegate_ident_mapping;
+} PgOAuthHbaPolicy;
 
 typedef struct PgOAuthPolicyConfig
 {
