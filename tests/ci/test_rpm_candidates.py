@@ -21,6 +21,7 @@ class CandidateTest(unittest.TestCase):
         self.second = pathlib.Path(temporary.name) / "second"
         for root in (self.first, self.second):
             for name in ("RPMS/aarch64/postgresql18-pg_oauth_validator-0.1.3-1.aarch64.rpm",
+                         "RPMS/aarch64/postgresql18-pg_oauth_validator-pam-0.1.3-1.aarch64.rpm",
                          "SRPMS/postgresql18-pg_oauth_validator-0.1.3-1.src.rpm",
                          "inputs/INPUTS.sha256", "inputs/SOURCES/SHA256SUMS",
                          "inputs/SPECS/pg_oauth_validator.spec", "BUILD-ENVIRONMENT.txt"):
@@ -31,7 +32,7 @@ class CandidateTest(unittest.TestCase):
     def test_equal_bundles_emit_complete_checksums(self):
         candidates.compare(self.first, self.second)
         lines = (self.first / "SHA256SUMS").read_text().splitlines()
-        self.assertEqual(len(lines), 6)
+        self.assertEqual(len(lines), 7)
         self.assertTrue(all(len(line.split()[0]) == 64 for line in lines))
         self.assertFalse((self.second / "SHA256SUMS").exists())
 
@@ -63,6 +64,25 @@ class CandidateTest(unittest.TestCase):
     def test_extra_package_blocks_comparison(self):
         path = self.second / "RPMS/extra.rpm"
         path.write_bytes(b"unexpected")
+        with self.assertRaises(ValueError):
+            candidates.compare(self.first, self.second)
+
+    def test_bundle_without_pam_rpm_remains_valid_for_older_baselines(self):
+        for root in (self.first, self.second):
+            (root / "RPMS/aarch64/postgresql18-pg_oauth_validator-pam-0.1.3-1.aarch64.rpm").unlink()
+        candidates.compare(self.first, self.second)
+        self.assertEqual(len((self.first / "SHA256SUMS").read_text().splitlines()), 6)
+
+    def test_duplicate_pam_rpm_or_missing_validator_blocks_comparison(self):
+        for root in (self.first, self.second):
+            extra = root / "RPMS/x86_64/postgresql18-pg_oauth_validator-pam-0.1.3-1.x86_64.rpm"
+            extra.parent.mkdir()
+            extra.write_bytes(b"second pam package")
+        with self.assertRaises(ValueError):
+            candidates.compare(self.first, self.second)
+        for root in (self.first, self.second):
+            (root / "RPMS/x86_64/postgresql18-pg_oauth_validator-pam-0.1.3-1.x86_64.rpm").unlink()
+            (root / "RPMS/aarch64/postgresql18-pg_oauth_validator-0.1.3-1.aarch64.rpm").unlink()
         with self.assertRaises(ValueError):
             candidates.compare(self.first, self.second)
 

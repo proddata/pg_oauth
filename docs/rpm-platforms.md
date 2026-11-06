@@ -40,6 +40,19 @@ server dependencies and Fedora's `MODULE_COMPAT_18` ABI requirement. PostgreSQL
 19 RPM packaging is not implemented. Distribution/architecture binaries are not
 interchangeable. Only `MAJOR.MINOR.PATCH` versions are accepted.
 
+The same spec also builds `postgresql18-pg_oauth_validator-pam`, the independent
+[PAM module](pam.md) installed as `%{_libdir}/security/pg_oauth_pam.so`. Neither
+package requires the other, and the PAM package carries its own bundled-library
+`Provides`, license and documentation. `scripts/ci/test-rpm-package.sh` installs
+it alone after the validator package is removed, checks its exports, linkage and
+file permissions, runs the real-connection PAM suite against the installed module
+and removes it. It is not covered by the SELinux enforcing-mode VM gate, which
+tests only the validator RPM, and it adds `pam-devel` to the builder
+dependencies. Retained release builders captured before this change cannot
+build the new spec offline until they are recaptured through the builders
+workflow and their lock is updated; retained older baselines without a PAM
+package remain valid. This was verified on Fedora 44 arm64 only.
+
 Images retain hash-verified embedded dependency archives under
 `/opt/rpm-dependencies`. Source0 comes from an exact full Git commit, excluding
 working-tree edits; the current generated spec is a separately hashed input.
