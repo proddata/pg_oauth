@@ -23,7 +23,7 @@ from test_pam_module import Libpq, preload_config, require_disposable
 
 
 @contextlib.contextmanager
-def pam_environment(extra_config=""):
+def pam_environment(extra_config="", policy_args=""):
     require_disposable()
     pg_config = os.environ["PG_CONFIG"]
     module = pathlib.Path(os.environ["PAM_MODULE"]).resolve()
@@ -45,7 +45,7 @@ def pam_environment(extra_config=""):
             shutil.copyfile(idp.tls_certificate, ca_file)
             ca_file.chmod(0o644)
             policy = (f"issuer={idp.issuer} audience={AUDIENCE} scope={SCOPE} "
-                      f"ca_file={ca_file}")
+                      f"ca_file={ca_file} {policy_args}")
             service_file.write_text(f"auth [success=ok default=die] {module} {policy}\n"
                                     f"account [success=ok default=die] {module} {policy}\n")
             service_file.chmod(0o644)
@@ -69,6 +69,26 @@ def test_authentication_timeout_interrupts_provider_fetch():
         idp.set_delay("metadata", 0)
         assert client.connect(cluster, token)[0], "stalled attempt poisoned later logins"
         assert token.decode() not in cluster.logs()
+
+
+@pytest.mark.slow
+@pytest.mark.xdist_group(name="timing")
+def test_authentication_timeout_interrupts_key_refresh():
+    with pam_environment("authentication_timeout = '1s'\n",
+                         "unknown_kid_refresh_cooldown_ms=1000") as (cluster, client, idp):
+        warm = idp.sign(subject="appuser").encode()
+        assert client.connect(cluster, warm)[0]
+        idp.rotate("interrupt-jwks-key")
+        rotated = idp.sign(subject="appuser").encode()
+        idp.set_delay("jwks", 2.5)
+        started = time.monotonic()
+        accepted, _ = client.connect(cluster, rotated)
+        assert not accepted
+        assert time.monotonic() - started < 2.2, cluster.logs()
+        idp.set_delay("jwks", 0)
+        time.sleep(1.1)  # the aborted refresh still starts the unknown-key cooldown
+        assert client.connect(cluster, rotated)[0]
+        assert rotated.decode() not in cluster.logs()
 
 
 @pytest.mark.slow

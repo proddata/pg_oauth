@@ -151,9 +151,12 @@ catches a mismatched or edited stack between the two stages.
 Policy identity for caching and isolation is the service name plus the canonical
 policy bytes, compared in full (see ADR 0009). Cache capacity is a single
 module-level setting, not a per-stack argument, because shared storage cannot be
-resized per service; its mechanism is defined by the cache design. Verify
-Linux-PAM's line-continuation, quoting and line-length behavior for the packaged
-versions before fixing exact argument limits.
+resized per service; its mechanism is defined by the cache design. Linux-PAM
+1.5.2 was tested: backslash continuation works; a value with spaces needs the
+whole argument in brackets (`[name=a b]`); and configuration lines are read into
+a fixed buffer, so a line over about 1 KiB fails closed instead of reaching the
+module with arguments dropped. Operators must keep each module line short; other
+Linux-PAM versions and distribution builds still need qualification.
 
 ### Limits and diagnostics
 

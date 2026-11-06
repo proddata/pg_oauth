@@ -82,6 +82,15 @@ account [success=ok default=die] pg_oauth_pam.so issuer=https://idp.example/ \
   audiences and scopes.
 - libpam rereads the file for each authentication, so an edit applies to new
   connections only.
+- Linux-PAM splits arguments on whitespace. Put a value that contains spaces, such
+  as several scopes, in brackets around the **whole argument**:
+  `[scope=connect:postgres extra:scope]`. The spelling `scope=[a b]` splits into
+  two arguments and denies.
+- Linux-PAM reads each configuration line (after backslash continuations are
+  joined) into a fixed buffer. In testing with Linux-PAM 1.5.2 a 900-byte line
+  worked and a line over 1500 bytes made authentication fail closed, never
+  succeed with arguments dropped. Keep each module line well under 1 KiB; use
+  fewer, shorter audiences and scopes if you reach the limit.
 
 **3. `postgresql.conf`** sets the one module-level option:
 
@@ -131,8 +140,9 @@ the same defaults; time values are in milliseconds.
 Parsing is strict and fails closed. An unknown, duplicate, missing, malformed or
 out-of-range argument denies every authentication on that line. Booleans are
 exactly `on` or `off`; numbers are plain decimal digits. `role_claim` and
-delegated roles are not supported. Each value is limited to 4096 bytes and the
-whole cache key to 4096 bytes, so very long lists deny.
+delegated roles are not supported. The module accepts values up to 4096 bytes and
+the whole cache key is limited to 4096 bytes, but libpam's configuration line
+limit above is reached first.
 
 ## Connect
 
@@ -186,7 +196,8 @@ the module returns a denial and PostgreSQL handles the interrupt.
 
 PostgreSQL logs `PAM authentication failed for user "..."` for a denial and gives
 the client no detail. The module writes stable diagnostic codes to the system log
-(syslog or the journal, prefixed with the PAM service and module name), never the token or any claim:
+(syslog or the journal), formatted by Linux-PAM as
+`pg_oauth_pam(<service>:<stage>): <message>`, never the token or any claim:
 
 | Message | Meaning |
 | --- | --- |

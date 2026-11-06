@@ -8,6 +8,7 @@ import concurrent.futures
 import os
 import pathlib
 import shutil
+import socket
 import sys
 import tempfile
 import time
@@ -315,3 +316,101 @@ def test_missing_preload_denies_before_postgresql_17():
             service_file.unlink(missing_ok=True)
             cluster.stop()
             idp.close()
+
+
+def test_bracket_quoted_arguments_reach_the_module_intact(environment):
+    """Linux-PAM splits arguments on whitespace; a value with spaces needs the
+    whole argument in brackets, [name=value with spaces]."""
+    _, _, idp, service_file, module, policy = environment[:6]
+    original = service_file.read_text()
+    two_scopes = f"{SCOPE} extra:scope"
+    quoted = policy.replace(f"scope={SCOPE}", f"[scope={two_scopes}]")
+    try:
+        service_file.write_text(stack(module, quoted))
+        # Both scopes are required: a token with only one must be denied, which
+        # also proves the value was not truncated at the space.
+        assert connect(environment, idp.sign(subject="appuser", scope=two_scopes))[0]
+        assert not connect(environment, idp.sign(subject="appuser", scope=SCOPE))[0]
+        # The unbracketed spelling splits into two arguments and fails closed.
+        service_file.write_text(stack(module, policy.replace(f"scope={SCOPE}", f"scope=[{two_scopes}]")))
+        assert not connect(environment, idp.sign(subject="appuser", scope=two_scopes))[0]
+    finally:
+        service_file.write_text(original)
+
+
+def test_continuation_lines_under_the_libpam_line_limit_work(environment):
+    _, _, idp, service_file, module, policy = environment[:6]
+    original = service_file.read_text()
+    filler = ",".join(f"https://f{index}.example/{'a' * 40}" for index in range(6))
+    long_policy = policy.replace(f"audience={AUDIENCE}", f"audience={AUDIENCE},{filler}")
+    lines = " \\\n    ".join(long_policy.split())
+    assert len(f"{module} {long_policy}") < 900
+    try:
+        service_file.write_text(f"auth [success=ok default=die] {module} {lines}\n"
+                                f"account [success=ok default=die] {module} {long_policy}\n")
+        assert connect(environment, idp.sign(subject="appuser"))[0]
+        # A truncated argument would reject a token minted for the last entry.
+        assert connect(environment, idp.sign(subject="appuser", audience=filler.split(",")[-1]))[0]
+    finally:
+        service_file.write_text(original)
+
+
+def test_a_stack_line_over_the_libpam_limit_never_weakens_policy(environment):
+    """Linux-PAM reads configuration lines into a fixed buffer. Whatever it does
+    with an overlong line, no authentication may succeed with a restrictive
+    trailing argument silently dropped."""
+    _, _, idp, service_file, module, policy = environment[:6]
+    original = service_file.read_text()
+    filler = ",".join(f"https://f{index}.example/{'a' * 60}" for index in range(20))
+    # ES256-only is a restriction stated last; an RS256 token must never pass.
+    long_policy = policy.replace(f"audience={AUDIENCE}",
+                                 f"audience={AUDIENCE},{filler}") + " algorithms=ES256"
+    assert len(f"{module} {long_policy}") > 1500
+    try:
+        service_file.write_text(stack(module, long_policy))
+        assert not connect(environment, idp.sign(subject="appuser"))[0]
+    finally:
+        service_file.write_text(original)
+
+
+@pytest.fixture
+def syslog():
+    """Collect what PAM modules write to syslog (the container runs no daemon)."""
+    path = pathlib.Path("/dev/log")
+    path.unlink(missing_ok=True)
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    listener.bind(str(path))
+    path.chmod(0o666)
+    listener.settimeout(0.2)
+
+    def messages():
+        found = []
+        while True:
+            try:
+                found.append(listener.recv(65536).decode("utf-8", "replace"))
+            except socket.timeout:
+                return found
+
+    try:
+        yield messages
+    finally:
+        listener.close()
+        path.unlink(missing_ok=True)
+
+
+def test_diagnostics_use_stable_codes_and_never_the_token(environment, syslog):
+    cluster, _, idp, service_file, module, policy = environment[:6]
+    original = service_file.read_text()
+    token = idp.sign(subject="other")  # valid, but not the requested role
+    assert not connect(environment, token, user="appuser")[0]
+    try:
+        service_file.write_text(stack(module, policy + " bogus=1"))
+        assert not connect(environment, token, user="appuser")[0]
+    finally:
+        service_file.write_text(original)
+    text = "\n".join(syslog())
+    assert "token rejected: role_mismatch" in text
+    assert "invalid module arguments: policy_unknown_argument" in text
+    # Format: prefixed with the PAM service and module, as docs/pam.md says.
+    assert "pg_oauth_pam" in text and "pg-oauth-pam-validate-" in text
+    assert token not in text and token.split(".")[2] not in text
