@@ -134,10 +134,15 @@ Before a production PAM release, prove:
 - owner failure, flood, outage and recovery behavior;
 - bounded lock contention;
 - installed paths, permissions and SELinux enforcement for the PAM module;
-- OAuth-only, PAM-only and both-installed deployments, including loading both
-  modules into one process in either order and verifying symbol and static-state
-  independence;
-- that removing or failing either module leaves the other's behavior unchanged;
+- OAuth-only, PAM-only and both-installed deployments. Shown by tests: PAM-only
+  clusters on every major; a cluster on 18 and 19 with both installed, HBA routing
+  roles to one method each, and separate cache segments; the two modules' exported
+  symbol sets are disjoint (`make check-modules-disjoint`), so neither can
+  interpose on the other. A backend authenticates through one method only, so one
+  process never loads both in practice, and that case is not separately tested;
+- that removing, misconfiguring or failing either module leaves the other's
+  behavior unchanged (tested by hiding each module file and by breaking each
+  configuration in turn);
 - on 15 and 16, that a preloaded module and the libpam-loaded module share one
   cache without duplicate or divergent state, and that a missing preload denies
   authentication rather than weakening coordination.

@@ -118,7 +118,7 @@ PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
 .PHONY: pam-module install-pam check-pam-install check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols pam-integrationcheck \
-	pam-check-pg15 pam-check-pg16 pam-check-pg17 pam-check-pg18 pam-check-pg19 check-pam-pg-version build-pg18 build-pg19 check-cache-key check-cache-state check-fail-closed check-http-freshness check-jwks check-jwt-envelope \
+	pam-both-check-pg18 pam-both-check-pg19 check-modules-disjoint pam-bothcheck pam-check-pg15 pam-check-pg16 pam-check-pg17 pam-check-pg18 pam-check-pg19 check-pam-pg-version build-pg18 build-pg19 check-cache-key check-cache-state check-fail-closed check-http-freshness check-jwks check-jwt-envelope \
 	check-signature \
 	check-claims check-http-transport check-libcurl-runtime check-identity check-issuer-key check-metadata \
 	check-validator \
@@ -290,6 +290,21 @@ check-pam-install: $(PAM_MODULE)
 	test -f "$$file" && test "$$(stat -c %a "$$file")" = 755 && \
 	test "$$(find "$$stage" -type f | wc -l)" = 1 || \
 	  { echo "error: staged PAM install is incomplete or has wrong permissions" >&2; exit 1; }
+
+# The native validator and the PAM module installed together (PostgreSQL 18, 19).
+# Their exported symbol sets must be disjoint so neither can interpose on the
+# other when both are loaded into one process.
+check-modules-disjoint: all $(PAM_MODULE)
+	@oauth=$$(nm -D --defined-only $(MODULE_big)$(DLSUFFIX) | awk '{print $$3}' | LC_ALL=C sort); \
+	pam=$$(nm -D --defined-only $(PAM_MODULE) | awk '{print $$3}' | LC_ALL=C sort); \
+	shared=$$(printf '%s\n' "$$oauth" "$$pam" | LC_ALL=C sort | uniq -d); \
+	test -z "$$shared" || { echo "error: modules export shared symbols: $$shared" >&2; exit 1; }
+
+pam-bothcheck: all $(PAM_MODULE) $(OAUTH_TEST_CLIENT_PATH) check-modules-disjoint
+	PG_CONFIG="$(PG_CONFIG)" VALIDATOR_LIBRARY="$(VALIDATOR_LIBRARY)" \
+		OAUTH_TEST_CLIENT="$(OAUTH_TEST_CLIENT_PATH)" PAM_MODULE="$(CURDIR)/$(PAM_MODULE)" \
+		PYTHONPYCACHEPREFIX="$(CURDIR)/.pycache" \
+		python3 -m pytest -q -o cache_dir="$(CURDIR)/.pytest_cache" "$(srcdir)/tests/pam_both"
 
 pam-integrationcheck: check-pam-pg-version $(PAM_MODULE)
 	$(PG_CONFIG) --version
@@ -682,11 +697,21 @@ pam-check-pg17:
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG17_CONFIG)" EXPECTED_PG_MAJOR=17 \
 		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols check-pam-install pam-integrationcheck
 
+pam-both-check-pg18:
+	@mkdir -p "$(BUILD_ROOT)/pg18/src" "$(BUILD_ROOT)/pg18/tests/integration"
+	$(MAKE) -C "$(BUILD_ROOT)/pg18" -f "$(SOURCE_DIR)/Makefile" \
+		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG18_CONFIG)" EXPECTED_PG_MAJOR=18 pam-bothcheck
+
 pam-check-pg18:
 	@mkdir -p "$(BUILD_ROOT)/pg18/src" "$(BUILD_ROOT)/pg18/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg18" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG18_CONFIG)" EXPECTED_PG_MAJOR=18 \
 		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols check-pam-install pam-integrationcheck
+
+pam-both-check-pg19:
+	@mkdir -p "$(BUILD_ROOT)/pg19/src" "$(BUILD_ROOT)/pg19/tests/integration"
+	$(MAKE) -C "$(BUILD_ROOT)/pg19" -f "$(SOURCE_DIR)/Makefile" \
+		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG19_CONFIG)" EXPECTED_PG_MAJOR=19 pam-bothcheck
 
 pam-check-pg19:
 	@mkdir -p "$(BUILD_ROOT)/pg19/src" "$(BUILD_ROOT)/pg19/tests/integration"

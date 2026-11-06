@@ -6,6 +6,8 @@ raw token in the password field; PostgreSQL's PAM support passes it to this
 module, which validates it with the same pipeline and token policy as the
 [native validator](configuration.md). It is a separate module: install it with
 or without `pg_oauth_validator`, and either keeps working without the other.
+On PostgreSQL 18 and 19 both can serve one cluster: each HBA rule uses `oauth`
+or `pam`, and the modules share no configuration, files or cache.
 
 [FEATURES.md](../FEATURES.md) defines the contract; [ADR 0008](adr/0008-postgresql-pam-token-authentication.md)
 and [ADR 0009](adr/0009-pam-cache-and-module-isolation.md) record the design.
