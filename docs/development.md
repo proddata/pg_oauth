@@ -1,8 +1,9 @@
 # Development and verification
 
-Engineering and review rules are in [AGENTS.md](../AGENTS.md). Use PostgreSQL
-18 or 19; other majors are rejected. RPM-specific commands are in
-[rpm-platforms.md](rpm-platforms.md).
+Engineering and review rules are in [AGENTS.md](../AGENTS.md). The native
+validator builds against PostgreSQL 18 or 19 and rejects other majors; the
+optional [PAM module](#pam-module) also builds on 15 to 17. RPM-specific commands
+are in [rpm-platforms.md](rpm-platforms.md).
 
 ## Container workflow
 
