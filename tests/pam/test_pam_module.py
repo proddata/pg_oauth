@@ -90,7 +90,7 @@ def environment(tmp_path_factory):
     module = pathlib.Path(os.environ["PAM_MODULE"]).resolve()
     assert module.is_file() and " " not in str(module)
     cluster = TemporaryPostgres(
-        pg_config, os.environ["VALIDATOR_LIBRARY"],
+        pg_config, None,
         server_certificate=certificate, server_key=tls_key,
         hba_lines=("local all all trust\n"
                    f"hostssl postgres appuser,other 127.0.0.1/32 pam pamservice={service}\n"),

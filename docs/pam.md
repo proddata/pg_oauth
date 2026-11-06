@@ -15,14 +15,15 @@ This feature is experimental and is not part of the active release scope.
 
 | PostgreSQL | Native OAuth validator | PAM module |
 | --- | --- | --- |
-| 15, 16, 17 | not available | planned; not yet built or tested |
+| 15, 16 | not available | planned; needs the preload route below, not yet built or tested |
+| 17 | not available | built and tested (PAM only) |
 | 18 | supported | built and tested |
 | 19 preview | preview | built and tested |
 
-Build a separate module for each PostgreSQL major version. Only PostgreSQL 18
-and 19 are built and tested today. The module has been exercised on Linux in
+Build a separate module for each PostgreSQL major version. Only PostgreSQL 17,
+18 and 19 are built and tested today. The module has been exercised on Linux in
 disposable Docker containers only; distribution packages, SELinux enforcing
-mode and PostgreSQL 15 to 17 are not qualified.
+mode and PostgreSQL 15 and 16 are not qualified.
 
 ## Requirements
 
@@ -176,7 +177,7 @@ the client no detail. The module writes stable diagnostic codes to the system lo
 
 ## Limits and known gaps
 
-- PostgreSQL 15 to 17 are planned, not available. Before PostgreSQL 17 there is
+- PostgreSQL 15 and 16 are planned, not available. Before PostgreSQL 17 there is
   no named shared-memory registry, so 15 and 16 will require the module in
   `shared_preload_libraries` ([ADR 0009](adr/0009-pam-cache-and-module-isolation.md)).
 - No RPM, SELinux policy or release artifact exists for this module yet.

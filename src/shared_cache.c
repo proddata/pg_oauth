@@ -9,6 +9,10 @@
 
 #include "shared_cache.h"
 
+#if PG_VERSION_NUM < 170000
+#error "the named DSM registry used for the shared cache requires PostgreSQL 17 or later (ADR 0009)"
+#endif
+
 /*
  * The OAuth validator and the PAM module compile this file privately and must
  * never share segments, locks or capacity (ADR 0009), so the PAM build selects

@@ -57,6 +57,9 @@ IDENTITY_FUZZ_CORPUS = .identity-fuzz-corpus
 METADATA_FUZZ_CORPUS = .metadata-fuzz-corpus
 SOURCE_DIR := $(abspath $(dir $(firstword $(MAKEFILE_LIST))))
 BUILD_ROOT ?= $(SOURCE_DIR)/build
+PG15_CONFIG ?= pg_config
+PG16_CONFIG ?= pg_config
+PG17_CONFIG ?= pg_config
 PG18_CONFIG ?= pg_config
 PG19_CONFIG ?= pg_config
 LIBJWT_STATIC := $(shell pkg-config --variable=libdir libjwt 2>/dev/null)/libjwt.a
@@ -110,7 +113,7 @@ PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
 .PHONY: pam-module install-pam check-pam-install check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols pam-integrationcheck \
-	pam-check-pg18 pam-check-pg19 build-pg18 build-pg19 check-cache-key check-cache-state check-fail-closed check-http-freshness check-jwks check-jwt-envelope \
+	pam-check-pg15 pam-check-pg16 pam-check-pg17 pam-check-pg18 pam-check-pg19 check-pam-pg-version build-pg18 build-pg19 check-cache-key check-cache-state check-fail-closed check-http-freshness check-jwks check-jwt-envelope \
 	check-signature \
 	check-claims check-http-transport check-libcurl-runtime check-identity check-issuer-key check-metadata \
 	check-validator \
@@ -172,6 +175,20 @@ fuzz-smoke:
 # Prevent compilation from starting with incompatible server headers.
 $(OBJS): | check-pg-version
 
+# The PAM module supports PostgreSQL 15 to 19; the native validator needs 18 or 19.
+check-pam-pg-version:
+	@version="$$($(PG_CONFIG) --version)"; \
+	case "$$version" in \
+	  "PostgreSQL 15"*|"PostgreSQL 16"*|"PostgreSQL 17"*|"PostgreSQL 18"*|"PostgreSQL 19"*) ;; \
+	  *) echo "error: PostgreSQL 15 to 19 pg_config is required (found: $$version)" >&2; exit 1 ;; \
+	esac; \
+	if test -n "$(EXPECTED_PG_MAJOR)"; then \
+	  case "$$version" in \
+	    "PostgreSQL $(EXPECTED_PG_MAJOR)"*) ;; \
+	    *) echo "error: PostgreSQL $(EXPECTED_PG_MAJOR) pg_config is required (found: $$version)" >&2; exit 1 ;; \
+	  esac; \
+	fi
+
 check-pg-version:
 	@version="$$($(PG_CONFIG) --version)"; \
 	case "$$version" in \
@@ -195,7 +212,7 @@ check-symbols: all
 
 pam-module: $(PAM_MODULE)
 
-$(PAM_MODULE): $(PAM_SOURCES) $(PAM_HEADERS) pam/pg_oauth_pam.exports
+$(PAM_MODULE): check-pam-pg-version $(PAM_SOURCES) $(PAM_HEADERS) pam/pg_oauth_pam.exports
 	@mkdir -p pam
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(PG_CPPFLAGS) -I$(includedir_server) \
 		-I$(srcdir)/src -I$(srcdir)/pam -fPIC -shared -DPG_OAUTH_CACHE_NAMESPACE_PAM \
@@ -209,7 +226,7 @@ $(PAM_CREDENTIAL_TEST_BIN): tests/pam/credential_test.c pam/pam_credential.c $(P
 	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow -I$(srcdir)/pam \
 		$(DEPENDENCY_SANITIZER_FLAGS) -o $@ $(filter %.c,$^)
 
-check-pam-credential: $(PAM_CREDENTIAL_TEST_BIN)
+check-pam-credential: check-pam-pg-version $(PAM_CREDENTIAL_TEST_BIN)
 	./$(PAM_CREDENTIAL_TEST_BIN)
 
 $(PAM_POLICY_TEST_BIN): tests/pam/policy_test.c pam/pam_policy.c src/policy.c $(PAM_HEADERS)
@@ -267,9 +284,9 @@ check-pam-install: $(PAM_MODULE)
 	test "$$(find "$$stage" -type f | wc -l)" = 1 || \
 	  { echo "error: staged PAM install is incomplete or has wrong permissions" >&2; exit 1; }
 
-pam-integrationcheck: all $(PAM_MODULE)
+pam-integrationcheck: check-pam-pg-version $(PAM_MODULE)
 	$(PG_CONFIG) --version
-	PG_CONFIG="$(PG_CONFIG)" VALIDATOR_LIBRARY="$(CURDIR)/$(MODULE_big)$(DLSUFFIX)" \
+	PG_CONFIG="$(PG_CONFIG)" \
 		PAM_MODULE="$(CURDIR)/$(PAM_MODULE)" PYTHONPYCACHEPREFIX="$(CURDIR)/.pycache" \
 		python3 -m pytest -q -o cache_dir="$(CURDIR)/.pytest_cache" "$(srcdir)/tests/pam"
 
@@ -639,6 +656,24 @@ clean-pg19:
 	@mkdir -p "$(BUILD_ROOT)/pg19/src" "$(BUILD_ROOT)/pg19/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg19" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG19_CONFIG)" EXPECTED_PG_MAJOR=19 clean
+
+pam-check-pg15:
+	@mkdir -p "$(BUILD_ROOT)/pg15/src" "$(BUILD_ROOT)/pg15/tests/integration"
+	$(MAKE) -C "$(BUILD_ROOT)/pg15" -f "$(SOURCE_DIR)/Makefile" \
+		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG15_CONFIG)" EXPECTED_PG_MAJOR=15 \
+		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols check-pam-install pam-integrationcheck
+
+pam-check-pg16:
+	@mkdir -p "$(BUILD_ROOT)/pg16/src" "$(BUILD_ROOT)/pg16/tests/integration"
+	$(MAKE) -C "$(BUILD_ROOT)/pg16" -f "$(SOURCE_DIR)/Makefile" \
+		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG16_CONFIG)" EXPECTED_PG_MAJOR=16 \
+		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols check-pam-install pam-integrationcheck
+
+pam-check-pg17:
+	@mkdir -p "$(BUILD_ROOT)/pg17/src" "$(BUILD_ROOT)/pg17/tests/integration"
+	$(MAKE) -C "$(BUILD_ROOT)/pg17" -f "$(SOURCE_DIR)/Makefile" \
+		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG17_CONFIG)" EXPECTED_PG_MAJOR=17 \
+		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols check-pam-install pam-integrationcheck
 
 pam-check-pg18:
 	@mkdir -p "$(BUILD_ROOT)/pg18/src" "$(BUILD_ROOT)/pg18/tests/integration"

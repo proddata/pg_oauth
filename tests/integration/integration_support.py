@@ -46,7 +46,8 @@ class TemporaryPostgres:
         self.bindir = pathlib.Path(
             command(self.pg_config, "--bindir").stdout.strip()
         )
-        self.validator_library = pathlib.Path(validator_library).resolve()
+        self.validator_library = (None if validator_library is None
+                                  else pathlib.Path(validator_library).resolve())
         version = command(self.pg_config, "--version").stdout
         match = re.search(r"PostgreSQL (\d+)", version)
         if match is None:
@@ -92,7 +93,6 @@ class TemporaryPostgres:
             user="postgres",
         )
 
-        library_dir = str(self.validator_library.parent).replace("'", "''")
         # Socket defaults vary by distribution (PostgreSQL 18, section 19.3.1).
         # Keep administrative connections inside this cluster's private root.
         socket_dir = str(self.root).replace("'", "''")
@@ -122,11 +122,12 @@ class TemporaryPostgres:
                 "ssl_key_file = 'server.key'\n"
             )
             hba_type = "hostssl"
-        with (self.data / "postgresql.conf").open("a", encoding="utf-8") as config:
-            config.write(
-                f"\nlisten_addresses = '127.0.0.1'\n"
-                f"port = {self.port}\n"
-                f"unix_socket_directories = '{socket_dir}'\n"
+        # Without a validator library the cluster is configured for PAM only: the
+        # OAuth settings do not exist before PostgreSQL 18.
+        oauth_configuration = ""
+        if self.validator_library is not None:
+            library_dir = str(self.validator_library.parent).replace("'", "''")
+            oauth_configuration = (
                 f"dynamic_library_path = '{library_dir}'\n"
                 "oauth_validator_libraries = 'pg_oauth_validator'\n"
                 f"pg_oauth_validator.audiences = '{audience}'\n"
@@ -137,6 +138,13 @@ class TemporaryPostgres:
                 f"pg_oauth_validator.allow_insecure_http = "
                 f"{'on' if self.allow_insecure_http else 'off'}\n"
                 f"pg_oauth_validator.ca_file = '{ca_file}'\n"
+            )
+        with (self.data / "postgresql.conf").open("a", encoding="utf-8") as config:
+            config.write(
+                f"\nlisten_addresses = '127.0.0.1'\n"
+                f"port = {self.port}\n"
+                f"unix_socket_directories = '{socket_dir}'\n"
+                f"{oauth_configuration}"
                 f"{self.extra_config}"
                 f"{ssl_configuration}"
                 # RPM samples enable the collector; keep all diagnostics in

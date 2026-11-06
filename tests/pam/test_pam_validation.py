@@ -36,7 +36,7 @@ def environment():
         service = "pg-oauth-pam-validate-" + uuid.uuid4().hex
         service_file = pathlib.Path("/etc/pam.d") / service
         cluster = TemporaryPostgres(
-            pg_config, os.environ["VALIDATOR_LIBRARY"],
+            pg_config, None,
             server_certificate=idp.tls_certificate, server_key=idp.tls_key,
             hba_lines=("local all all trust\n"
                        f"hostssl postgres appuser,other 127.0.0.1/32 pam pamservice={service}\n"),

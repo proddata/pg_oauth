@@ -106,7 +106,7 @@ upgrades and rollback.
 | --- | --- |
 | Settings and role mapping | [Configuration](docs/configuration.md) |
 | Installation, rollout and recovery | [Operations](docs/operations.md) |
-| PAM token authentication for PostgreSQL 18/19 (experimental) | [PAM guide](docs/pam.md) |
+| PAM token authentication for PostgreSQL 17-19 (experimental) | [PAM guide](docs/pam.md) |
 | Demo and external issuer setup | [Tutorial](demo/README.md) |
 | Tested issuers and limitations | [Provider compatibility](PROVIDER-COMPATIBILITY.md) |
 | Product and security contract | [Features](FEATURES.md) |
