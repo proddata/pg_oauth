@@ -220,7 +220,11 @@ pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv)
 	time_t		wall_time;
 
 	(void) flags;
-	/* No authentication state means no account success, whatever else is true. */
+
+	/*
+	 * No authentication state means no account success, whatever else is
+	 * true.
+	 */
 	if (pam_get_data(pamh, transaction_name, &data) != PAM_SUCCESS || data == NULL)
 	{
 		pam_syslog(pamh, LOG_WARNING, "account denied: no_authentication_state");

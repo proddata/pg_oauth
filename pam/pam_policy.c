@@ -139,7 +139,11 @@ pg_oauth_pam_policy_parse(int argc, const char **argv, PgOAuthPamPolicy *policy)
 
 		if (argument == NULL)
 			return PG_OAUTH_PAM_POLICY_INVALID_ARGUMENT;
-		/* Bound before scanning; the name is short, the value is bounded below. */
+
+		/*
+		 * Bound before scanning; the name is short, the value is bounded
+		 * below.
+		 */
 		if (strnlen(argument, PG_OAUTH_PAM_MAX_VALUE_LENGTH + 64) >
 			PG_OAUTH_PAM_MAX_VALUE_LENGTH + 64)
 			return PG_OAUTH_PAM_POLICY_VALUE_TOO_LONG;

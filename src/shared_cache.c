@@ -156,7 +156,8 @@ pg_oauth_shared_cache_attach(void)
 	return true;
 }
 
-#else							/* PostgreSQL 15 and 16: preloaded shared memory */
+#else							/* PostgreSQL 15 and 16: preloaded shared
+								 * memory */
 
 static shmem_request_hook_type previous_shmem_request_hook;
 static shmem_startup_hook_type previous_shmem_startup_hook;
@@ -186,6 +187,7 @@ preload_shmem_startup(void)
 		return;
 	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
 	shared_state = ShmemInitStruct(PG_OAUTH_SHARED_CACHE_NAME, segment_size, &found);
+
 	/*
 	 * Shared memory is recreated after a crash restart and is then not found,
 	 * so initialization always happens before any backend can attach.

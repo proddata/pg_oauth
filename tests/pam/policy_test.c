@@ -151,7 +151,10 @@ main(void)
 	{
 		const char *args[] = {"issuer=https://idp.example/", "audience=a", "scope=a", long_value};
 
-		/* Exactly the limit passes the parser; the shared builder bounds ca_file itself. */
+		/*
+		 * Exactly the limit passes the parser; the shared builder bounds
+		 * ca_file itself.
+		 */
 		denied(parse(4, args, &p), PG_OAUTH_PAM_POLICY_INVALID_POLICY, &p);
 		long_value[8 + PG_OAUTH_PAM_MAX_VALUE_LENGTH] = 'a';
 		long_value[8 + PG_OAUTH_PAM_MAX_VALUE_LENGTH + 1] = '\0';
@@ -164,7 +167,10 @@ main(void)
 	require(pg_oauth_pam_policy_parse(1, NULL, &p) == PG_OAUTH_PAM_POLICY_INVALID_ARGUMENT);
 	require(pg_oauth_pam_policy_parse(0, NULL, NULL) == PG_OAUTH_PAM_POLICY_INVALID_ARGUMENT);
 
-	/* The digest binds effective policy: order-insensitive for arguments, exact for values. */
+	/*
+	 * The digest binds effective policy: order-insensitive for arguments,
+	 * exact for values.
+	 */
 	{
 		PgOAuthPamPolicy a_policy;
 		PgOAuthPamPolicy b_policy;
@@ -184,7 +190,11 @@ main(void)
 					  "scope=connect:postgres", "clock_skew_ms=1000", "algorithms=ES256") == PG_OAUTH_PAM_POLICY_OK);
 		require(pg_oauth_pam_policy_digest(&b_policy, second));
 		require(memcmp(first, second, sizeof(first)) != 0);
-		/* Field boundaries are length-delimited, so concatenations cannot collide. */
+
+		/*
+		 * Field boundaries are length-delimited, so concatenations cannot
+		 * collide.
+		 */
 		require(PARSE(&a_policy, "issuer=https://idp.example/", "audience=ab", "scope=c") == PG_OAUTH_PAM_POLICY_OK);
 		require(PARSE(&b_policy, "issuer=https://idp.example/", "audience=a", "scope=bc") == PG_OAUTH_PAM_POLICY_OK);
 		require(pg_oauth_pam_policy_digest(&a_policy, first) && pg_oauth_pam_policy_digest(&b_policy, second));

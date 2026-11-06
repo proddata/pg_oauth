@@ -57,7 +57,10 @@ main(void)
 	require(pg_oauth_pam_transaction_check(&tx, "appuser", "svc", digest, NOW, 4999) == PG_OAUTH_PAM_ACCOUNT_CLOCK_INVALID);
 	require(pg_oauth_pam_transaction_check(&tx, "appuser", "svc", digest, -1, 5000) == PG_OAUTH_PAM_ACCOUNT_CLOCK_INVALID);
 
-	/* Expiry uses the shared predicate: expired once now >= exp and elapsed >= skew. */
+	/*
+	 * Expiry uses the shared predicate: expired once now >= exp and elapsed
+	 * >= skew.
+	 */
 	require(pg_oauth_pam_transaction_check(&tx, "appuser", "svc", digest, EXPIRY, 5000) == PG_OAUTH_PAM_ACCOUNT_OK);
 	require(pg_oauth_pam_transaction_check(&tx, "appuser", "svc", digest, EXPIRY + SKEW - 1, 5000) == PG_OAUTH_PAM_ACCOUNT_OK);
 	require(pg_oauth_pam_transaction_check(&tx, "appuser", "svc", digest, EXPIRY + SKEW, 5000) == PG_OAUTH_PAM_ACCOUNT_EXPIRED);

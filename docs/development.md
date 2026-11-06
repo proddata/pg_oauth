@@ -78,6 +78,29 @@ starts isolated real servers and a local HTTPS issuer; it checks authorization,
 TLS, hostile transport, reloads, rotation, outage/recovery, concurrency and
 redaction. PostgreSQL 19 additionally tests custom HBA policy options.
 
+## PAM module
+
+The optional [PAM module](pam.md) is built and tested separately for PostgreSQL 15
+to 19. Its tests write a PAM service under `/etc/pam.d` and need root, so they
+refuse to run unless `OAUTH_TEST_PAM_DISPOSABLE=1` is set inside a disposable
+Linux container. Use the Compose services, one per major:
+
+```sh
+docker compose -f compose.test.yml build pg17
+docker compose -f compose.test.yml run --rm \
+  -e OAUTH_TEST_PAM_DISPOSABLE=1 pg17 pam-check-pg17
+```
+
+`pam-check-pgNN` runs the unit tests, the exported-symbol and allowed-server-symbol
+checks, a staged-install check and the real-connection suite. On PostgreSQL 18
+and 19 `pam-both-check-pgNN` additionally installs the native validator and the PAM
+module in one cluster. CI runs the same targets. `make pam-module` builds only the
+module, and `make install-pam` installs it into the system PAM directory.
+
+Run the Compose commands from a normal clone. A Git worktree's `.git` is a pointer
+into another directory that the container cannot read, which breaks the source
+snapshot step.
+
 ## Quality and packaging gates
 
 ```sh
