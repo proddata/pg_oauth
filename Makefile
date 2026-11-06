@@ -36,8 +36,8 @@ PAM_VALIDATION_SOURCES = src/policy.c src/validator_policy.c src/validator.c \
 	src/cache_state.c src/metadata.c src/signature.c src/jwks.c \
 	src/jwt_envelope.c src/claims.c src/identity.c src/base64url.c
 PAM_SOURCES = pam/pg_oauth_pam.c pam/pam_credential.c pam/pam_policy.c \
-	pam/pam_transaction.c $(PAM_VALIDATION_SOURCES)
-PAM_HEADERS = pam/pam_credential.h pam/pam_policy.h pam/pam_transaction.h \
+	pam/pam_transaction.c pam/pam_cache.c src/shared_cache.c $(PAM_VALIDATION_SOURCES)
+PAM_HEADERS = pam/pam_credential.h pam/pam_policy.h pam/pam_transaction.h pam/pam_cache.h \
 	$(wildcard $(srcdir)/src/*.h)
 PAM_CREDENTIAL_TEST_BIN = tests/pam/credential_test
 PAM_POLICY_TEST_BIN = tests/pam/policy_test
@@ -198,7 +198,7 @@ pam-module: $(PAM_MODULE)
 $(PAM_MODULE): $(PAM_SOURCES) $(PAM_HEADERS) pam/pg_oauth_pam.exports
 	@mkdir -p pam
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(PG_CPPFLAGS) -I$(includedir_server) \
-		-I$(srcdir)/src -I$(srcdir)/pam -fPIC -shared \
+		-I$(srcdir)/src -I$(srcdir)/pam -fPIC -shared -DPG_OAUTH_CACHE_NAMESPACE_PAM \
 		$$(pkg-config --cflags jansson libcurl libjwt openssl) \
 		-Wl,-Bsymbolic -Wl,--version-script=$(srcdir)/pam/pg_oauth_pam.exports \
 		-o $@ $(filter %.c,$^) $(LIBJWT_STATIC) $(JANSSON_STATIC) \
@@ -236,8 +236,14 @@ check-pam-symbols: $(PAM_MODULE)
 	@exported=$$(nm -D --defined-only $(PAM_MODULE) | awk '{print $$3}' | sort | tr '\n' ' '); \
 	test "$$exported" = "pam_sm_acct_mgmt pam_sm_authenticate pam_sm_setcred " || \
 	  { echo "error: unexpected PAM module exports: $$exported" >&2; exit 1; }
-	@if nm -D --undefined-only $(PAM_MODULE) | grep -E '[ _](pg_|palloc|pfree|elog|errstart|errmsg|MemoryContext|InterruptPending)'; then \
-	  echo "error: PAM module must not depend on PostgreSQL symbols" >&2; exit 1; fi
+	@# PostgreSQL symbols are resolved from the server at load time. Only the
+	@# shared-cache and setting calls below are allowed; any other server
+	@# dependency must be added here deliberately (ADR 0009).
+	@unexpected=$$(nm -D --undefined-only $(PAM_MODULE) | awk '{print $$2}' | sed 's/@.*//' \
+	  | grep -E '^(ConditionVariable|DefineCustom|GetNamed|LWLock|MarkGUC|palloc|pfree|repalloc|pg_|elog|err|Memory|Process|proc_|Wait|Interrupt|Latch|Shmem|dsm_|BackgroundWorker|Check|Resource|Set|Get)' \
+	  | grep -v -x -E 'ConditionVariable(Broadcast|CancelSleep|Init|PrepareToSleep|TimedSleep)|DefineCustomIntVariable|GetNamedDSMSegment|LWLock(Acquire|Initialize|NewTrancheId|RegisterTranche|Release)|MarkGUCPrefixReserved' || true); \
+	test -z "$$unexpected" || \
+	  { echo "error: PAM module has unexpected PostgreSQL symbols: $$unexpected" >&2; exit 1; }
 
 pam-integrationcheck: all $(PAM_MODULE)
 	$(PG_CONFIG) --version

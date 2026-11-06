@@ -4,6 +4,7 @@ A local HTTPS identity provider issues signed JWTs; PostgreSQL authenticates
 them through pg_oauth_pam using the shared validation pipeline.
 """
 
+import concurrent.futures
 import os
 import pathlib
 import shutil
@@ -114,7 +115,40 @@ def test_malformed_and_missing_credentials_are_denied(environment):
         assert not connect(environment, value)[0]
 
 
-def test_provider_outage_denies_without_poisoning_recovery(environment):
+_variant = iter(range(1000, 100000))
+
+
+@pytest.fixture
+def cold_policy(environment):
+    """Install a policy no earlier test used, so its cache entries start cold.
+
+    The full policy is part of the cache key, so a unique clock skew isolates
+    one test's cache entries from every other test's.
+    """
+    _, _, _, service_file, module, policy = environment[:6]
+    original = service_file.read_text()
+    service_file.write_text(stack(module, f"{policy} clock_skew_ms={next(_variant)}"))
+    try:
+        yield
+    finally:
+        service_file.write_text(original)
+
+
+def test_cache_is_shared_across_backends(environment, cold_policy):
+    _, _, idp, *_ = environment
+    token = idp.sign(subject="appuser")
+    before = idp.request_counts()
+    assert connect(environment, token)[0]
+    first = idp.request_counts()
+    assert first["metadata"] == before["metadata"] + 1
+    assert first["jwks"] == before["jwks"] + 1
+    # Each login is a new backend process; the cache must still serve them.
+    for _ in range(3):
+        assert connect(environment, token)[0]
+    assert idp.request_counts() == first
+
+
+def test_cold_cache_outage_denies_and_recovers(environment, cold_policy):
     _, _, idp, *_ = environment
     token = idp.sign(subject="appuser")
     idp.outage = True
@@ -123,6 +157,70 @@ def test_provider_outage_denies_without_poisoning_recovery(environment):
     finally:
         idp.outage = False
     assert connect(environment, token)[0]
+
+
+def test_fresh_cache_survives_a_provider_outage(environment, cold_policy):
+    _, _, idp, *_ = environment
+    token = idp.sign(subject="appuser")
+    assert connect(environment, token)[0]
+    idp.outage = True
+    try:
+        counts = idp.request_counts()
+        assert connect(environment, token)[0]
+        assert idp.request_counts() == counts
+    finally:
+        idp.outage = False
+
+
+def test_unknown_key_refresh_is_suppressed_across_backends(environment, cold_policy):
+    _, _, idp, *_ = environment
+    assert connect(environment, idp.sign(subject="appuser"))[0]
+    baseline = idp.request_counts()["jwks"]
+    for _ in range(5):
+        assert not connect(environment, idp.sign(subject="appuser", header_key_id="nope"))[0]
+    # At most one cooldown-limited refresh for attacker-chosen key ids.
+    assert idp.request_counts()["jwks"] <= baseline + 1
+
+
+def test_concurrent_cold_logins_share_one_refresh(environment, cold_policy):
+    _, _, idp, *_ = environment
+    token = idp.sign(subject="appuser")
+    idp.set_delay("metadata", 0.5)
+    idp.set_delay("jwks", 0.5)
+    before = idp.request_counts()
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+            results = list(pool.map(lambda _: connect(environment, token), range(6)))
+    finally:
+        idp.set_delay("metadata", 0)
+        idp.set_delay("jwks", 0)
+    assert all(accepted for accepted, _ in results), results
+    after = idp.request_counts()
+    # One backend refreshes; the others wait for it instead of stampeding.
+    assert after["metadata"] - before["metadata"] == 1
+    assert after["jwks"] - before["jwks"] == 1
+
+
+def test_cache_uses_its_own_namespace(environment, cold_policy):
+    cluster, _, idp, *_ = environment
+    if cluster.major < 19:
+        pytest.skip("pg_dsm_registry_allocations exists from PostgreSQL 19")
+    assert connect(environment, idp.sign(subject="appuser"))[0]
+    names = psql(cluster, "SELECT name FROM pg_dsm_registry_allocations").stdout
+    assert "pg_oauth_pam.cache.v1" in names
+    # The OAuth validator was never used, so its segment must not exist.
+    assert "pg_oauth_validator.cache" not in names
+
+
+def test_policy_change_never_reuses_other_policy_cache(environment, cold_policy):
+    _, _, idp, service_file, module, policy = environment[:6]
+    token = idp.sign(subject="appuser")
+    assert connect(environment, token)[0]
+    warmed = idp.request_counts()
+    service_file.write_text(stack(module, f"{policy} clock_skew_ms={next(_variant)}"))
+    assert connect(environment, token)[0]
+    # A different policy has a different key: it must fetch again, not share.
+    assert idp.request_counts()["metadata"] == warmed["metadata"] + 1
 
 
 def test_account_stage_requires_identical_policy_on_both_lines(environment):

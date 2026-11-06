@@ -37,6 +37,22 @@ cache existing. Each artifact links its validation and cache code privately and
 binds symbols locally, so loading both in one process cannot cause either to
 call into the other's copy or share mutable static state.
 
+### Implemented storage on PostgreSQL 17 and later
+
+The PAM module compiles `src/shared_cache.c` privately with its own namespace:
+the named DSM segment `pg_oauth_pam.cache.v1` and the lock tranche
+`pg_oauth_pam_cache`. Capacity is the module-level setting
+`pg_oauth_pam.cache_max_entries` (8 to 256, default 32) in `postgresql.conf`.
+libpam loads the module, so PostgreSQL never calls `_PG_init`; the module
+defines that setting on first use. Changing it needs a restart, and a conflicting
+value denies rather than resizing. If the cache cannot be attached, PAM denies;
+it never validates without refresh coordination. PAM cache keys include the PAM
+service name in addition to the complete policy.
+
+The module's only PostgreSQL dependencies are the condition-variable, lightweight
+lock, named-DSM and custom-setting calls this needs. `make check-pam-symbols`
+enforces that list, so any new server dependency must be added deliberately.
+
 ### Cache contents and behavior
 
 Do not store requested identities or bearer tokens. Share only validated public

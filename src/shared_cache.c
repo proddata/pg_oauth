@@ -9,8 +9,18 @@
 
 #include "shared_cache.h"
 
+/*
+ * The OAuth validator and the PAM module compile this file privately and must
+ * never share segments, locks or capacity (ADR 0009), so the PAM build selects
+ * its own namespace.
+ */
+#ifdef PG_OAUTH_CACHE_NAMESPACE_PAM
+#define PG_OAUTH_SHARED_CACHE_NAME "pg_oauth_pam.cache.v1"
+#define PG_OAUTH_SHARED_CACHE_TRANCHE "pg_oauth_pam_cache"
+#else
 #define PG_OAUTH_SHARED_CACHE_NAME "pg_oauth_validator.cache.v3"
 #define PG_OAUTH_SHARED_CACHE_TRANCHE "pg_oauth_validator_cache"
+#endif
 #define PG_OAUTH_SHARED_CACHE_MAGIC UINT32_C(0x50474f43)
 #define PG_OAUTH_SHARED_CACHE_VERSION UINT32_C(3)
 

@@ -8,8 +8,9 @@
  * matching, unexpired record. Every other path denies. Session and password
  * operations are intentionally not exported.
  *
- * This revision validates without a cache: each authentication fetches
- * discovery metadata and the JWKS. That is experimental only (ADR 0009).
+ * Provider metadata and JWKS are cached across backends in shared memory under
+ * the module's own namespace (ADR 0009). If that cache cannot be attached the
+ * module denies; it never validates without refresh coordination.
  */
 #include "postgres.h"
 
@@ -27,6 +28,7 @@
 #include <security/pam_modules.h>
 
 #include "http_transport.h"
+#include "pam_cache.h"
 #include "pam_credential.h"
 #include "pam_policy.h"
 #include "pam_transaction.h"
@@ -110,6 +112,8 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 	PgOAuthPamPolicy policy;
 	PgOAuthPamCredential credential = {NULL, 0};
 	PgOAuthValidatorPolicy validator_policy;
+	PgOAuthIssuerKeyCachePolicy cache_policy;
+	PgOAuthCacheIo cache_io;
 	PgOAuthValidatorResult result;
 	PgOAuthPamTransaction *transaction = NULL;
 	PgOAuthValidatorError error;
@@ -119,6 +123,7 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 	const char *service;
 	uint8_t		digest[PG_OAUTH_PAM_DIGEST_SIZE];
 	int64_t		completed_ms;
+	int64_t		started_ms;
 	time_t		wall_time;
 	int			outcome = PAM_AUTH_ERR;
 
@@ -138,6 +143,10 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 							   policy.validation.allow_insecure_http,
 							   &metadata_host) != PG_OAUTH_HTTP_OK)
 		goto done;
+	/* Cache keys are isolated per PAM service as well as by full policy. */
+	policy.validation.name = service;
+	if (!pg_oauth_pam_cache_io(&cache_io) || !monotonic_ms(&started_ms))
+		goto done;
 	if (pg_oauth_pam_credential_acquire(pamh, (size_t) policy.validation.max_token_size,
 										&credential) != PG_OAUTH_PAM_CREDENTIAL_OK)
 		goto done;
@@ -147,8 +156,11 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 	pg_oauth_validator_policy_assemble(&policy.validation, metadata_host, user,
 									   (int64_t) wall_time, cancel_requested,
 									   &validator_policy);
-	error = pg_oauth_validate_access_token(credential.data, credential.length,
-										   metadata_url, &validator_policy, &result);
+	pg_oauth_cache_policy_assemble(&policy.validation, &cache_io, &cache_policy);
+	error = pg_oauth_validate_access_token_cached(credential.data, credential.length,
+												  metadata_url, &validator_policy,
+												  &cache_policy, started_ms,
+												  (int64_t) wall_time, &result);
 	/* The credential is no longer needed once validation has returned. */
 	pg_oauth_pam_credential_clear(&credential);
 	if (error != PG_OAUTH_VALIDATOR_OK)
