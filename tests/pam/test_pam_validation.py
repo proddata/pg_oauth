@@ -5,6 +5,7 @@ them through pg_oauth_pam using the shared validation pipeline.
 """
 
 import concurrent.futures
+import contextlib
 import os
 import pathlib
 import shutil
@@ -414,3 +415,102 @@ def test_diagnostics_use_stable_codes_and_never_the_token(environment, syslog):
     # Format: prefixed with the PAM service and module, as docs/pam.md says.
     assert "pg_oauth_pam" in text and "pg-oauth-pam-validate-" in text
     assert token not in text and token.split(".")[2] not in text
+
+
+@contextlib.contextmanager
+def stack_with(environment, arguments, account_arguments=None):
+    """Temporarily install the stack with extra policy arguments on each line."""
+    _, _, _, service_file, module, policy = environment[:6]
+    original = service_file.read_text()
+    account = arguments if account_arguments is None else account_arguments
+    service_file.write_text(
+        f"auth [success=ok default=die] {module} {policy} {arguments}\n"
+        f"account [success=ok default=die] {module} {policy} {account}\n")
+    try:
+        yield
+    finally:
+        service_file.write_text(original)
+
+
+def delegated(idp, roles, **claims):
+    return idp.sign(subject="someone-else", extra_claims={"pg_roles": roles, **claims})
+
+
+def test_identity_claim_selects_the_claim_that_must_equal_the_role(environment):
+    _, _, idp, *_ = environment
+    with stack_with(environment, "identity_claim=preferred_username"):
+        token = idp.sign(subject="unrelated", extra_claims={"preferred_username": "appuser"})
+        assert connect(environment, token)[0]
+        # The default claim no longer decides anything, and a missing one denies.
+        assert not connect(environment, idp.sign(subject="appuser"))[0]
+        assert not connect(environment, token, user="other")[0]
+
+
+def test_delegated_roles_authorize_exactly_the_listed_roles(environment):
+    _, _, idp, *_ = environment
+    with stack_with(environment, "role_claim=pg_roles"):
+        # The subject need not equal the role; the claim names what may be used.
+        both = delegated(idp, ["appuser", "other"])
+        assert connect(environment, both, user="appuser")[0]
+        assert connect(environment, both, user="other")[0]
+        only_other = delegated(idp, ["other"])
+        assert connect(environment, only_other, user="other")[0]
+        assert not connect(environment, only_other, user="appuser")[0]
+        assert connect(environment, delegated(idp, "appuser"), user="appuser")[0]
+        # Exact match: case and prefix differences do not authorize.
+        assert not connect(environment, delegated(idp, ["AppUser"]), user="appuser")[0]
+        assert not connect(environment, delegated(idp, ["appuser2"]), user="appuser")[0]
+
+
+def test_delegated_roles_never_widen_what_hba_allows(environment):
+    _, _, idp, *_ = environment
+    with stack_with(environment, "role_claim=pg_roles"):
+        # A token may list a role the HBA rule does not route through PAM.
+        assert not connect(environment, delegated(idp, ["postgres"]), user="postgres")[0]
+
+
+@pytest.mark.parametrize("claims", [
+    {},
+    {"pg_roles": 7},
+    {"pg_roles": {"appuser": True}},
+    {"pg_roles": [7]},
+    {"pg_roles": [["appuser"]]},
+    {"pg_roles": [""]},
+    {"pg_roles": ""},
+    {"pg_roles": ["appuser", "appuser"]},
+    {"pg_roles": [f"role{index}" for index in range(64)] + ["appuser"]},
+    {"pg_roles": ["a" * 64]},
+    {"pg_roles": ["appuser"], "sub": 7},
+    {"pg_roles": ["appuser"], "sub": None},
+], ids=["missing", "number", "object", "number-entry", "nested", "empty-entry",
+        "empty-string", "duplicate", "too-many", "too-long", "wrong-type-subject",
+        "null-subject"])
+def test_malformed_role_claims_are_denied(environment, claims):
+    _, _, idp, *_ = environment
+    with stack_with(environment, "role_claim=pg_roles"):
+        subject = claims.get("sub", "someone-else")
+        extra = {key: value for key, value in claims.items() if key != "sub"}
+        token = idp.sign(subject=subject, extra_claims=extra if "sub" not in claims
+                         else {**extra, "sub": subject})
+        assert not connect(environment, token, user="appuser")[0]
+
+
+def test_role_claim_must_match_between_the_two_stack_lines(environment):
+    _, _, idp, *_ = environment
+    token = delegated(idp, ["appuser"])
+    with stack_with(environment, "role_claim=pg_roles", ""):
+        assert not connect(environment, token)[0]
+    with stack_with(environment, "", "role_claim=pg_roles"):
+        assert not connect(environment, idp.sign(subject="appuser"))[0]
+    with stack_with(environment, "role_claim=pg_roles", "role_claim=other_roles"):
+        assert not connect(environment, token)[0]
+
+
+def test_delegated_roles_are_opt_in_per_stack(environment):
+    _, _, idp, *_ = environment
+    token = delegated(idp, ["appuser"])
+    # Without the argument a roles claim is ignored: identity must equal the role.
+    assert not connect(environment, token)[0]
+    with stack_with(environment, "role_claim=pg_roles"):
+        assert connect(environment, token)[0]
+    assert not connect(environment, token)[0]

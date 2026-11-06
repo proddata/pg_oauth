@@ -176,8 +176,15 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 				   pg_oauth_validator_error_code(error));
 		goto done;
 	}
-	/* Initial PAM authorization: exact equality with the requested role. */
-	if (strcmp(result.identity.value, user) != 0)
+
+	/*
+	 * Identity mode: the validated identity must equal the requested role. In
+	 * delegated roles mode the validation pipeline has already required the
+	 * role claim to name the requested role exactly, and the identity is only
+	 * the token's stable subject.
+	 */
+	if (policy.validation.role_claim[0] == '\0' &&
+		strcmp(result.identity.value, user) != 0)
 	{
 		pam_syslog(pamh, LOG_WARNING, "token rejected: role_mismatch");
 		goto done;

@@ -35,6 +35,7 @@ static const ArgumentSpec specs[] = {
 	SPEC("token_types", ARGUMENT_STRING, config.allowed_token_types),
 	SPEC("allow_missing_token_type", ARGUMENT_BOOLEAN, config.allow_missing_token_type),
 	SPEC("identity_claim", ARGUMENT_STRING, config.identity_claim),
+	SPEC("role_claim", ARGUMENT_STRING, config.role_claim),
 	SPEC("clock_skew_ms", ARGUMENT_NUMBER, config.clock_skew_ms),
 	SPEC("max_token_size", ARGUMENT_NUMBER, config.max_token_size),
 	SPEC("jwks_hosts", ARGUMENT_STRING, config.allowed_jwks_hosts),
@@ -50,7 +51,7 @@ static const ArgumentSpec specs[] = {
 
 #define SPEC_COUNT (sizeof(specs) / sizeof(specs[0]))
 
-/* Defaults equal the OAuth validator's GUC defaults; role_claim is unsupported. */
+/* Defaults equal the OAuth validator's GUC defaults. */
 static void
 set_defaults(PgOAuthPamPolicy *policy)
 {
@@ -181,7 +182,14 @@ pg_oauth_pam_policy_parse(int argc, const char **argv, PgOAuthPamPolicy *policy)
 
 	/* The shared builder owns every semantic rule (ranges, lists, claims). */
 	policy->hba.policy_name = NULL;
-	policy->hba.delegate_ident_mapping = false;
+
+	/*
+	 * PAM has no HBA switch for delegation: a non-empty role_claim argument
+	 * is the single explicit opt-in. The builder still requires the two to
+	 * agree.
+	 */
+	policy->hba.delegate_ident_mapping = policy->config.role_claim != NULL &&
+		policy->config.role_claim[0] != '\0';
 	policy->build_error = pg_oauth_policy_build(&policy->config, &policy->hba,
 												&policy->validation);
 	if (policy->build_error != PG_OAUTH_POLICY_OK)
@@ -235,6 +243,7 @@ pg_oauth_pam_policy_digest(const PgOAuthPamPolicy *policy, uint8_t out[32])
 		DIGEST_STRING("audience", v->audiences) &&
 		DIGEST_STRING("scope", v->required_scopes) &&
 		DIGEST_STRING("identity_claim", v->identity_claim) &&
+		DIGEST_STRING("role_claim", v->role_claim) &&
 		DIGEST_STRING("jwks_hosts", v->allowed_jwks_hosts) &&
 		DIGEST_STRING("ca_file", v->ca_file) &&
 		DIGEST_INT("algorithms", v->allowed_algorithms) &&

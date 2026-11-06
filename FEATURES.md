@@ -92,8 +92,15 @@ PAM contract, requiring a PAM-enabled PostgreSQL build:
 - The credential is a raw compact JWT access token, validated by the same
   pipeline and token policy as OAuth. No `Bearer` prefix, trimming, truncation or
   alternate formats are accepted.
-- Initial authorization requires the validated identity to equal the requested
-  database role exactly. No usermaps, delegated roles or `PAM_USER` changes.
+- By default authorization requires the validated identity (`identity_claim`,
+  `sub` unless configured) to equal the requested database role exactly. No
+  usermaps or `PAM_USER` changes.
+- Setting the stack argument `role_claim=<claim>` selects delegated roles mode as
+  for the native validator: the requested role must appear exactly in that claim
+  (a string or an array of distinct, nonempty strings), the identity claim is
+  still required but need not equal the role, privileged roles get no special
+  treatment, and the HBA `USER` field remains the allowlist. The claim is part of
+  the policy digest compared between the two stack lines and of every cache key.
 - A dedicated PAM service with fail-closed, success-only controls is required;
   no `sufficient`/`optional` rules, `pam_permit`, system includes or password
   fallback. The module cannot protect a stack that skips it. HBA restrictions
@@ -233,8 +240,8 @@ The following are outside the active release scope:
 - automatic PostgreSQL role provisioning or deletion;
 - accepting arbitrary JWTs solely because their signature verifies;
 - accepting opaque tokens or using token introspection;
-- PAM role claims, usermaps or session/password PAM operations, and PAM use
-  outside PostgreSQL;
+- PAM usermaps or session/password PAM operations, and PAM use outside
+  PostgreSQL;
 - revocation-aware online validation;
 - implicit provider compatibility;
 - implicit provider-group transformations into PostgreSQL roles;

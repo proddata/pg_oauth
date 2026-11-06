@@ -64,10 +64,25 @@ the same pipeline and token policy as OAuth: issuer-derived metadata and JWKS,
 algorithm allowlist, signature before claims, audience, scopes, expiry and
 token type. Do not strip `Bearer`, trim, truncate or accept alternate formats.
 
-Initial PAM authorization requires the validated identity to equal the original
-requested database role exactly. Do not mutate `PAM_USER` and do not apply
-OAuth usermaps. PAM role claims, delegated roles and arbitrary maps are out of
-scope and need a separate policy review.
+PAM authorization has two explicit modes, chosen by the stack arguments. Do not
+mutate `PAM_USER` and do not apply OAuth usermaps; arbitrary maps are out of scope
+and need a separate policy review.
+
+- **Identity mode (default):** the validated identity, from `identity_claim`
+  (`sub` by default), must equal the original requested database role exactly.
+- **Delegated roles mode (`role_claim=<claim>`):** the configured claim must be a
+  string or an array of distinct, nonempty strings that contains the requested
+  role exactly. The identity claim is still required and validated and is the
+  token's stable subject, but it need not equal the role. The semantics are those
+  of the native validator's delegated mode: no special treatment of privileged
+  roles, and the HBA `USER` field remains the independent allowlist of reachable
+  roles. Native OAuth requires both `delegate_ident_mapping=1` in HBA and a role
+  claim; PAM has no HBA switch, so the stack argument is the single explicit
+  opt-in, and an unset or empty `role_claim` selects identity mode. A missing,
+  wrong-typed, duplicate, empty or oversized claim denies.
+
+The role claim is part of the policy: it is included in the policy digest that the
+account stage compares and in every cache key.
 
 ### PAM stack requirements
 
@@ -134,7 +149,7 @@ same meaning, defaults and ranges. The required arguments are `issuer`,
 `allow_missing_token_type`, `identity_claim`, `clock_skew_ms`, `max_token_size`
 (PAM default 16 KiB, maximum 65530), `jwks_hosts`, `ca_file`, the cache and
 refresh timing settings, and `allow_insecure_http` (development only, off by
-default). `role_claim` is not supported. No token claim, client environment or
+default). `role_claim` (empty by default) enables delegated roles mode. No token claim, client environment or
 path argument selects trust.
 
 Parsing is strict and fail-closed. Deny on an unknown or duplicate argument, a

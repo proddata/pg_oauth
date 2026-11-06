@@ -130,6 +130,7 @@ the same defaults; time values are in milliseconds.
 | `token_types` | no | `at+jwt,application/at+jwt` | Accepted `typ` values. |
 | `allow_missing_token_type` | no | `off` | Accept tokens without `typ` (see the [compatibility notes](configuration.md)). |
 | `identity_claim` | no | `sub` | Claim used as the validated identity. |
+| `role_claim` | no | empty | Enables [delegated roles](#delegated-roles): the claim that lists the roles a token may use. |
 | `clock_skew_ms` | no | `60000` | Clock skew, 0 to 300000. |
 | `max_token_size` | no | `16384` | Credential limit in bytes, 1024 to 65530. |
 | `jwks_hosts` | no | empty | Extra exact hostnames allowed for JWKS retrieval. |
@@ -139,8 +140,7 @@ the same defaults; time values are in milliseconds.
 
 Parsing is strict and fails closed. An unknown, duplicate, missing, malformed or
 out-of-range argument denies every authentication on that line. Booleans are
-exactly `on` or `off`; numbers are plain decimal digits. `role_claim` and
-delegated roles are not supported. The module accepts values up to 4096 bytes and
+exactly `on` or `off`; numbers are plain decimal digits. The module accepts values up to 4096 bytes and
 the whole cache key is limited to 4096 bytes, but libpam's configuration line
 limit above is reached first.
 
@@ -153,14 +153,36 @@ PGPASSWORD="$ACCESS_TOKEN" psql \
   "host=db.example dbname=app user=appuser sslmode=verify-full sslrootcert=ca.pem"
 ```
 
-- The validated identity (the `identity_claim`, `sub` by default) must equal the
-  requested role exactly. There is no usermap and no delegated role claim: a token
+- By default the validated identity (the `identity_claim`, `sub` unless
+  configured) must equal the requested role exactly. There is no usermap: a token
   whose subject is `appuser` can sign in as `appuser` and nobody else.
 - The default credential limit is 16 KiB and the hard maximum is 65530 bytes
   (PostgreSQL's password packet bound). Longer credentials are rejected, never
   truncated.
 - Connection pools need a valid token for every new physical connection. A token's
   expiry does not end an established session.
+
+## Delegated roles
+
+Set `role_claim=<claim>` to let the token, not its subject, name the roles it may
+use. The claim must be a string or an array of distinct, nonempty strings, and
+the requested role must appear in it exactly:
+
+```text
+auth    [success=ok default=die] pg_oauth_pam.so issuer=https://idp.example/ \
+            audience=postgres://primary scope=connect:postgres role_claim=pg_roles
+account [success=ok default=die] pg_oauth_pam.so issuer=https://idp.example/ \
+            audience=postgres://primary scope=connect:postgres role_claim=pg_roles
+```
+
+A token whose `pg_roles` claim is `["appuser", "reporting"]` can sign in as either
+role. The identity claim is still required and validated, but it no longer has to
+equal the role. The same safeguards as the native delegated mode apply: **no role
+is treated specially, so a token that lists a superuser can sign in as it if the
+HBA `USER` field allows that role.** Enumerate the roles in the HBA rule instead
+of using `all` or a broad group, and make sure the identity provider controls who
+can obtain such a claim. A missing, wrong-typed, duplicated, empty or oversized
+claim denies. Without `role_claim` nothing changes.
 
 ## What is checked
 

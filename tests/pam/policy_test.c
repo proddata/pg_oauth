@@ -81,6 +81,25 @@ main(void)
 	require(p.validation.max_token_size == 65530 && p.validation.allow_missing_token_type);
 	require(p.validation.allowed_algorithms & PG_OAUTH_ALGORITHM_EDDSA);
 
+	/* Delegated roles: role_claim is the single explicit opt-in. */
+	require(PARSE(&p, REQUIRED) == PG_OAUTH_PAM_POLICY_OK);
+	require(p.validation.role_claim[0] == '\0' && !p.hba.delegate_ident_mapping);
+	require(PARSE(&p, REQUIRED, "role_claim=pg_roles") == PG_OAUTH_PAM_POLICY_OK);
+	require(strcmp(p.validation.role_claim, "pg_roles") == 0 && p.hba.delegate_ident_mapping);
+	require(strcmp(p.validation.identity_claim, "sub") == 0);
+	require(PARSE(&p, REQUIRED, "role_claim=pg_roles", "identity_claim=email") == PG_OAUTH_PAM_POLICY_OK);
+	require(PARSE(&p, REQUIRED, "role_claim=") == PG_OAUTH_PAM_POLICY_OK);
+	require(p.validation.role_claim[0] == '\0' && !p.hba.delegate_ident_mapping);
+	denied(PARSE(&p, REQUIRED, "role_claim=has space"), PG_OAUTH_PAM_POLICY_INVALID_POLICY, &p);
+	denied(PARSE(&p, REQUIRED, "role_claim=pg_roles", "role_claim=other"), PG_OAUTH_PAM_POLICY_DUPLICATE_ARGUMENT, &p);
+	{
+		char		long_claim[11 + 129 + 1] = "role_claim=";
+
+		memset(long_claim + 11, 'c', 129);
+		long_claim[11 + 129] = '\0';
+		denied(PARSE(&p, REQUIRED, long_claim), PG_OAUTH_PAM_POLICY_INVALID_POLICY, &p);
+	}
+
 	/* Boundaries of the PAM credential limit. */
 	require(PARSE(&p, REQUIRED, "max_token_size=1024") == PG_OAUTH_PAM_POLICY_OK);
 	denied(PARSE(&p, REQUIRED, "max_token_size=1023"), PG_OAUTH_PAM_POLICY_INVALID_POLICY, &p);
@@ -97,7 +116,8 @@ main(void)
 
 	/* Unknown, duplicate, role_claim (unsupported) and wrong-case names. */
 	denied(PARSE(&p, REQUIRED, "bogus=1"), PG_OAUTH_PAM_POLICY_UNKNOWN_ARGUMENT, &p);
-	denied(PARSE(&p, REQUIRED, "role_claim=roles"), PG_OAUTH_PAM_POLICY_UNKNOWN_ARGUMENT, &p);
+	denied(PARSE(&p, REQUIRED, "role_claims=roles"), PG_OAUTH_PAM_POLICY_UNKNOWN_ARGUMENT, &p);
+	denied(PARSE(&p, REQUIRED, "roleclaim=roles"), PG_OAUTH_PAM_POLICY_UNKNOWN_ARGUMENT, &p);
 	denied(PARSE(&p, REQUIRED, "Issuer=https://x/"), PG_OAUTH_PAM_POLICY_UNKNOWN_ARGUMENT, &p);
 	denied(PARSE(&p, REQUIRED, "issue=https://x/"), PG_OAUTH_PAM_POLICY_UNKNOWN_ARGUMENT, &p);
 	denied(PARSE(&p, REQUIRED, "issuer=https://other/"), PG_OAUTH_PAM_POLICY_DUPLICATE_ARGUMENT, &p);
@@ -197,6 +217,15 @@ main(void)
 		 */
 		require(PARSE(&a_policy, "issuer=https://idp.example/", "audience=ab", "scope=c") == PG_OAUTH_PAM_POLICY_OK);
 		require(PARSE(&b_policy, "issuer=https://idp.example/", "audience=a", "scope=bc") == PG_OAUTH_PAM_POLICY_OK);
+		require(pg_oauth_pam_policy_digest(&a_policy, first) && pg_oauth_pam_policy_digest(&b_policy, second));
+		require(memcmp(first, second, sizeof(first)) != 0);
+
+		/*
+		 * The role claim is part of the digest, so the two stack lines must
+		 * agree on it.
+		 */
+		require(PARSE(&a_policy, REQUIRED) == PG_OAUTH_PAM_POLICY_OK);
+		require(PARSE(&b_policy, REQUIRED, "role_claim=pg_roles") == PG_OAUTH_PAM_POLICY_OK);
 		require(pg_oauth_pam_policy_digest(&a_policy, first) && pg_oauth_pam_policy_digest(&b_policy, second));
 		require(memcmp(first, second, sizeof(first)) != 0);
 		require(!pg_oauth_pam_policy_digest(NULL, first));
