@@ -83,6 +83,24 @@ class RpmSourcesTest(unittest.TestCase):
         self.assertNotIn("@VERSION@", spec)
         self.assertIn("Version:        0.1.0", spec)
 
+    def test_pam_subpackage_follows_the_packaged_source(self):
+        """A retained older release has no PAM module and must be rebuilt without it."""
+        without = (self.prepare("without") / "SPECS/pg_oauth_validator.spec").read_text()
+        self.assertIn("%global with_pam 0\n", without)
+        self.assertNotIn("@WITH_PAM@", without)
+        (self.repository / "pam").mkdir()
+        (self.repository / "pam/pg_oauth_pam.c").write_text("/* PAM module fixture */\n")
+        self.git("add", ".")
+        self.git("-c", "user.name=RPM test", "-c", "user.email=rpm@example.invalid",
+                 "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null",
+                 "commit", "--quiet", "-m", "adds pam")
+        revision = self.git("rev-parse", "HEAD").strip()
+        with_pam = (self.prepare("with", revision=revision) / "SPECS/pg_oauth_validator.spec").read_text()
+        self.assertIn("%global with_pam 1\n", with_pam)
+        # The older revision is still prepared from its own tree, not the newer one.
+        again = (self.prepare("again", revision=self.revision) / "SPECS/pg_oauth_validator.spec").read_text()
+        self.assertIn("%global with_pam 0\n", again)
+
     def test_invalid_versions_and_revisions_do_not_create_outputs(self):
         for version in ("", "01.2.3", "1.2", "1.2.3-rc.1", "1.2.3%{lua:bad}", "1.2.3\nName: bad"):
             with self.subTest(version=version), self.assertRaises(ValueError):
