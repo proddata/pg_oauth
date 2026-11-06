@@ -5,7 +5,7 @@ OBJS = src/pg_oauth_validator.o src/config.o src/hba_policy.o src/policy.o \
 	src/cache_state.o src/cache_key.o src/shared_cache.o src/http_freshness.o \
 	src/http_transport.o src/metadata.o src/jwks.o src/base64url.o \
 	src/jwt_envelope.o src/signature.o src/claims.o src/identity.o \
-	src/issuer_key.o src/validator.o
+	src/issuer_key.o src/validator.o src/validator_policy.o
 TEST_BIN = tests/fail_closed_test
 POLICY_TEST_BIN = tests/policy_test
 JWT_ENVELOPE_TEST_BIN = tests/jwt_envelope_test
