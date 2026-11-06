@@ -61,6 +61,53 @@ The active release scope provides strict offline validation of signed JWT access
 - Negative unit and integration test coverage for the threat model.
 - Sanitized, stable diagnostic codes without token or secret disclosure.
 
+## Proposed scope: PostgreSQL PAM token authentication
+
+Not part of the active release scope until reviewed and implemented; see
+[`ADR 0008`](docs/adr/0008-postgresql-pam-token-authentication.md) and
+[`ADR 0009`](docs/adr/0009-pam-cache-and-module-isolation.md). It exists for
+clients that can send a password but cannot perform native OAuth authentication.
+It adds no token introspection or other authentication mechanism.
+
+Supported PostgreSQL versions. The native OAuth validator targets PostgreSQL 18
+and 19 only, because earlier majors have no validator API. The PAM module targets
+PostgreSQL 15, 16, 17, 18 and 19 (preview), each compiled separately, so PAM is
+the only supported path on 15, 16 and 17. Cross-backend cache sharing needs no
+preload configuration on PostgreSQL 17 or later; PostgreSQL 15 and 16 require
+the module in `shared_preload_libraries` and deny authentication without it (ADR 0009).
+
+Deployment modes. The OAuth validator and the PAM module are independent,
+separately built and installed modules that share validation source code but no
+runtime state:
+
+- **OAuth only (18, 19):** `pg_oauth_validator` with HBA method `oauth`. No PAM
+  module or PAM dependency is installed.
+- **PAM only (15, 16, 17, 18, 19):** `pg_oauth_pam` with HBA method `pam`. The OAuth
+  validator is not required.
+- **Both (18, 19):** HBA rules choose `oauth` or `pam` per rule. Installing or removing
+  one module never changes the other's behavior, configuration or cache.
+
+PAM contract, requiring a PAM-enabled PostgreSQL build:
+
+- The credential is a raw compact JWT access token, validated by the same
+  pipeline and token policy as OAuth. No `Bearer` prefix, trimming, truncation or
+  alternate formats are accepted.
+- Initial authorization requires the validated identity to equal the requested
+  database role exactly. No usermaps, delegated roles or `PAM_USER` changes.
+- A dedicated PAM service with fail-closed, success-only controls is required;
+  no `sufficient`/`optional` rules, `pam_permit`, system includes or password
+  fallback. The module cannot protect a stack that skips it. HBA restrictions
+  and `hostssl` with verifying clients remain mandatory deployment practice.
+- Account management rechecks expiry from bound transaction state (role,
+  profile, policy generation, expiry) and never stores the token or claims.
+- The default credential limit is 16 KiB and the hard maximum is 65530 bytes;
+  oversized credentials are rejected, never truncated.
+- PAM cache storage is isolated from OAuth's, with bounded cross-backend refresh
+  coordination required before production release.
+- Diagnostics are stable codes without credential-derived text. PAM logs the
+  database username, not the external authenticated identity. Token replay
+  during validity and established-session lifetime follow the limits in ADR 0008.
+
 ## Required validation pipeline
 
 All stages fail closed and execute in this trust order:
@@ -182,6 +229,8 @@ The following are outside the active release scope:
 - automatic PostgreSQL role provisioning or deletion;
 - accepting arbitrary JWTs solely because their signature verifies;
 - accepting opaque tokens or using token introspection;
+- PAM role claims, usermaps or session/password PAM operations, and PAM use
+  outside PostgreSQL;
 - revocation-aware online validation;
 - implicit provider compatibility;
 - implicit provider-group transformations into PostgreSQL roles;
