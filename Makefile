@@ -39,6 +39,11 @@ PAM_SOURCES = pam/pg_oauth_pam.c pam/pam_credential.c pam/pam_policy.c \
 	pam/pam_transaction.c pam/pam_cache.c src/shared_cache.c $(PAM_VALIDATION_SOURCES)
 PAM_HEADERS = pam/pam_credential.h pam/pam_policy.h pam/pam_transaction.h pam/pam_cache.h \
 	$(wildcard $(srcdir)/src/*.h)
+# Before PostgreSQL 17 the module is also preloaded (ADR 0009), which needs the
+# magic block and _PG_init exported in addition to the three PAM entry points.
+PAM_PG_MAJOR = $(shell $(PG_CONFIG) --version | sed -E 's/^PostgreSQL ([0-9]+).*/\1/')
+PAM_PRELOAD = $(filter 15 16,$(PAM_PG_MAJOR))
+PAM_EXPORTS = pam/pg_oauth_pam$(if $(PAM_PRELOAD),_preload).exports
 PAM_CREDENTIAL_TEST_BIN = tests/pam/credential_test
 PAM_POLICY_TEST_BIN = tests/pam/policy_test
 PAM_TRANSACTION_TEST_BIN = tests/pam/transaction_test
@@ -212,12 +217,12 @@ check-symbols: all
 
 pam-module: $(PAM_MODULE)
 
-$(PAM_MODULE): check-pam-pg-version $(PAM_SOURCES) $(PAM_HEADERS) pam/pg_oauth_pam.exports
+$(PAM_MODULE): check-pam-pg-version $(PAM_SOURCES) $(PAM_HEADERS) $(PAM_EXPORTS)
 	@mkdir -p pam
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(PG_CPPFLAGS) -I$(includedir_server) \
 		-I$(srcdir)/src -I$(srcdir)/pam -fPIC -shared -DPG_OAUTH_CACHE_NAMESPACE_PAM \
 		$$(pkg-config --cflags jansson libcurl libjwt openssl) \
-		-Wl,-Bsymbolic -Wl,--version-script=$(srcdir)/pam/pg_oauth_pam.exports \
+		-Wl,-Bsymbolic -Wl,--version-script=$(srcdir)/$(PAM_EXPORTS) \
 		-o $@ $(filter %.c,$^) $(LIBJWT_STATIC) $(JANSSON_STATIC) \
 		$$(pkg-config --libs libcurl openssl) -lpam -ldl
 
@@ -250,15 +255,17 @@ check-pam-transaction: $(PAM_TRANSACTION_TEST_BIN)
 # Only the three PAM entry points may be visible; no validator or library
 # symbol can interpose into another module loaded in the same process.
 check-pam-symbols: $(PAM_MODULE)
-	@exported=$$(nm -D --defined-only $(PAM_MODULE) | awk '{print $$3}' | sort | tr '\n' ' '); \
-	test "$$exported" = "pam_sm_acct_mgmt pam_sm_authenticate pam_sm_setcred " || \
+	@expected="pam_sm_acct_mgmt pam_sm_authenticate pam_sm_setcred "; \
+	test -z "$(PAM_PRELOAD)" || expected="Pg_magic_func _PG_init pam_sm_acct_mgmt pam_sm_authenticate pam_sm_setcred "; \
+	exported=$$(nm -D --defined-only $(PAM_MODULE) | awk '{print $$3}' | LC_ALL=C sort | tr '\n' ' '); \
+	test "$$exported" = "$$expected" || \
 	  { echo "error: unexpected PAM module exports: $$exported" >&2; exit 1; }
 	@# PostgreSQL symbols are resolved from the server at load time. Only the
 	@# shared-cache and setting calls below are allowed; any other server
 	@# dependency must be added here deliberately (ADR 0009).
 	@unexpected=$$(nm -D --undefined-only $(PAM_MODULE) | awk '{print $$2}' | sed 's/@.*//' \
 	  | grep -E '^(ConditionVariable|DefineCustom|GetNamed|LWLock|MarkGUC|palloc|pfree|repalloc|pg_|elog|err|Memory|Process|proc_|Wait|Interrupt|Latch|Shmem|dsm_|BackgroundWorker|Check|Resource|Set|Get)' \
-	  | grep -v -x -E 'ConditionVariable(Broadcast|CancelSleep|Init|PrepareToSleep|TimedSleep)|DefineCustomIntVariable|GetNamedDSMSegment|LWLock(Acquire|Initialize|NewTrancheId|RegisterTranche|Release)|MarkGUCPrefixReserved' || true); \
+	  | grep -v -x -E 'ConditionVariable(Broadcast|CancelSleep|Init|PrepareToSleep|TimedSleep)|DefineCustomIntVariable|GetNamedDSMSegment|LWLock(Acquire|Initialize|NewTrancheId|RegisterTranche|Release)|MarkGUCPrefixReserved$(if $(PAM_PRELOAD),|AddinShmemInitLock|RequestAddinShmemSpace|ShmemInitStruct|shmem_(request|startup)_hook|process_shared_preload_libraries_in_progress|err(start|start_cold|code|msg|finish))' || true); \
 	test -z "$$unexpected" || \
 	  { echo "error: PAM module has unexpected PostgreSQL symbols: $$unexpected" >&2; exit 1; }
 

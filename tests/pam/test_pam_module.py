@@ -8,6 +8,7 @@ credential byte may reach any client or server log.
 import ctypes
 import os
 import pathlib
+import re
 import socket
 import ssl
 import struct
@@ -27,6 +28,22 @@ def require_disposable():
             or not pathlib.Path("/.dockerenv").is_file()
             or os.environ.get("OAUTH_TEST_PAM_DISPOSABLE") != "1"):
         raise RuntimeError("PAM tests require explicit opt-in in a disposable Linux container")
+
+
+def server_major(pg_config):
+    version = command(pg_config, "--version").stdout
+    return int(re.search(r"PostgreSQL (\d+)", version).group(1))
+
+
+def preload_config(pg_config, module):
+    """postgresql.conf lines the PAM module needs on this major.
+
+    Before PostgreSQL 17 shared memory can only be created by the postmaster, so
+    the module must be preloaded; later majors attach it on first use.
+    """
+    if server_major(pg_config) >= 17:
+        return ""
+    return f"shared_preload_libraries = '{module.with_suffix('')}'\n"
 
 
 class Libpq:
@@ -92,6 +109,7 @@ def environment(tmp_path_factory):
     cluster = TemporaryPostgres(
         pg_config, None,
         server_certificate=certificate, server_key=tls_key,
+        extra_config=preload_config(pg_config, module),
         hba_lines=("local all all trust\n"
                    f"hostssl postgres appuser,other 127.0.0.1/32 pam pamservice={service}\n"),
     )

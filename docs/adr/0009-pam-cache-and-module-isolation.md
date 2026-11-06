@@ -53,6 +53,17 @@ The module's only PostgreSQL dependencies are the condition-variable, lightweigh
 lock, named-DSM and custom-setting calls this needs. `make check-pam-symbols`
 enforces that list, so any new server dependency must be added deliberately.
 
+### Implemented storage on PostgreSQL 15 and 16
+
+The module is also built as a preload library on 15 and 16: it exports the
+PostgreSQL magic block and `_PG_init`, defines `pg_oauth_pam.cache_max_entries`
+as a postmaster setting, and through `shmem_request_hook` and
+`shmem_startup_hook` requests one shared segment under the same namespace. The
+segment is reinitialized whenever PostgreSQL recreates shared memory. A backend
+that finds no segment (not preloaded) reports the cache unavailable and PAM
+denies. Tests show that the preloaded copy and the copy libpam loads share one
+cache, and that a missing preload denies without contacting the provider.
+
 ### Cache contents and behavior
 
 Do not store requested identities or bearer tokens. Share only validated public

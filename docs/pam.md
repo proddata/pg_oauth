@@ -15,15 +15,15 @@ This feature is experimental and is not part of the active release scope.
 
 | PostgreSQL | Native OAuth validator | PAM module |
 | --- | --- | --- |
-| 15, 16 | not available | planned; needs the preload route below, not yet built or tested |
+| 15, 16 | not available | built and tested; must be preloaded (see below) |
 | 17 | not available | built and tested (PAM only) |
 | 18 | supported | built and tested |
 | 19 preview | preview | built and tested |
 
-Build a separate module for each PostgreSQL major version. Only PostgreSQL 17,
-18 and 19 are built and tested today. The module has been exercised on Linux in
-disposable Docker containers only; distribution packages, SELinux enforcing
-mode and PostgreSQL 15 and 16 are not qualified.
+Build a separate module for each PostgreSQL major version. PostgreSQL 15 to 19
+are built and tested. The module has been exercised on Linux in
+disposable Docker containers only; distribution packages and SELinux enforcing
+mode are not qualified.
 
 ## Requirements
 
@@ -86,6 +86,24 @@ account [success=ok default=die] pg_oauth_pam.so issuer=https://idp.example/ \
 ```text
 pg_oauth_pam.cache_max_entries = 32   # 8 to 256; changing it needs a restart
 ```
+
+### PostgreSQL 15 and 16: preload the module
+
+PostgreSQL 17 introduced the named shared-memory registry the cache uses. Before
+that only the postmaster can create shared memory, so on **15 and 16 the module
+must also be listed in `shared_preload_libraries`**, using the same file that the
+PAM stack loads:
+
+```text
+shared_preload_libraries = '/usr/lib64/security/pg_oauth_pam'
+pg_oauth_pam.cache_max_entries = 32
+```
+
+This needs a server restart. Without the preload the module has no storage and
+**denies every authentication** rather than validate without refresh coordination.
+Preloading is not needed, and not supported, on 17 and later. The preloaded
+library and the one libpam loads must be the same file, or the module finds no
+shared cache and denies.
 
 ### Module arguments
 
@@ -177,9 +195,6 @@ the client no detail. The module writes stable diagnostic codes to the system lo
 
 ## Limits and known gaps
 
-- PostgreSQL 15 and 16 are planned, not available. Before PostgreSQL 17 there is
-  no named shared-memory registry, so 15 and 16 will require the module in
-  `shared_preload_libraries` ([ADR 0009](adr/0009-pam-cache-and-module-isolation.md)).
 - No RPM, SELinux policy or release artifact exists for this module yet.
 - Bearer tokens can be replayed until they expire. Use short-lived tokens and TLS.
 - PostgreSQL's PAM logging records the database username, not the external

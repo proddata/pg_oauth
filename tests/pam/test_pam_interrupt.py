@@ -19,7 +19,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "integration"))
 from integration_support import AUDIENCE, SCOPE, LocalIdp, TemporaryPostgres, psql
-from test_pam_module import Libpq, require_disposable
+from test_pam_module import Libpq, preload_config, require_disposable
 
 
 @contextlib.contextmanager
@@ -34,7 +34,7 @@ def pam_environment(extra_config=""):
         cluster = TemporaryPostgres(
             pg_config, None,
             server_certificate=idp.tls_certificate, server_key=idp.tls_key,
-            extra_config=extra_config,
+            extra_config=preload_config(pg_config, module) + extra_config,
             hba_lines=("local all all trust\n"
                        f"hostssl postgres appuser 127.0.0.1/32 pam pamservice={service}\n"),
         )

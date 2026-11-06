@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "integration"))
 from integration_support import AUDIENCE, SCOPE, LocalIdp, TemporaryPostgres, command, psql
-from test_pam_module import Libpq, require_disposable
+from test_pam_module import Libpq, preload_config, require_disposable, server_major
 
 
 def stack(module, policy, account_policy=None):
@@ -38,6 +38,7 @@ def environment():
         cluster = TemporaryPostgres(
             pg_config, None,
             server_certificate=idp.tls_certificate, server_key=idp.tls_key,
+            extra_config=preload_config(pg_config, module),
             hba_lines=("local all all trust\n"
                        f"hostssl postgres appuser,other 127.0.0.1/32 pam pamservice={service}\n"),
         )
@@ -278,3 +279,39 @@ def test_policy_changes_apply_to_later_connections_only(environment):
     finally:
         service_file.write_text(original)
     assert connect(environment, token)[0]
+
+
+def test_missing_preload_denies_before_postgresql_17():
+    """Without shared_preload_libraries the module has no storage and must deny."""
+    require_disposable()
+    pg_config = os.environ["PG_CONFIG"]
+    if server_major(pg_config) >= 17:
+        pytest.skip("PostgreSQL 17 and later attach shared memory without a preload")
+    module = pathlib.Path(os.environ["PAM_MODULE"]).resolve()
+    with tempfile.TemporaryDirectory(prefix="pg-oauth-pam-nopreload-") as directory:
+        idp = LocalIdp(pathlib.Path(directory), cache_max_age=60)
+        service = "pg-oauth-pam-nopreload-" + uuid.uuid4().hex
+        service_file = pathlib.Path("/etc/pam.d") / service
+        cluster = TemporaryPostgres(
+            pg_config, None,
+            server_certificate=idp.tls_certificate, server_key=idp.tls_key,
+            hba_lines=("local all all trust\n"
+                       f"hostssl postgres appuser 127.0.0.1/32 pam pamservice={service}\n"),
+        )
+        try:
+            cluster.start()
+            psql(cluster, "CREATE ROLE appuser LOGIN")
+            ca_file = cluster.root / "provider-ca.pem"
+            shutil.copyfile(idp.tls_certificate, ca_file)
+            ca_file.chmod(0o644)
+            policy = (f"issuer={idp.issuer} audience={AUDIENCE} scope={SCOPE} "
+                      f"ca_file={ca_file}")
+            service_file.write_text(stack(module, policy))
+            service_file.chmod(0o644)
+            accepted, _ = Libpq(pg_config).connect(cluster, idp.sign(subject="appuser").encode())
+            assert not accepted
+            assert idp.request_counts() == {"metadata": 0, "jwks": 0}, "validated without storage"
+        finally:
+            service_file.unlink(missing_ok=True)
+            cluster.stop()
+            idp.close()

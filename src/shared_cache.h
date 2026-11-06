@@ -14,6 +14,13 @@ typedef struct PgOAuthSharedCacheLookup
 } PgOAuthSharedCacheLookup;
 
 extern bool pg_oauth_shared_cache_attach(void);
+#if PG_VERSION_NUM < 170000
+/*
+ * PostgreSQL 15 and 16: request the shared segment from the postmaster. Call
+ * only while shared_preload_libraries is being processed.
+ */
+extern void pg_oauth_shared_cache_preload(int capacity);
+#endif
 extern bool pg_oauth_shared_cache_configure_capacity(int capacity);
 extern PgOAuthSharedCacheLookup pg_oauth_shared_cache_lookup(
 															 const void *key, size_t key_length, int64_t now_ms, bool allow_stale,
