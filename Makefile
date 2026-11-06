@@ -202,7 +202,7 @@ $(PAM_MODULE): $(PAM_SOURCES) $(PAM_HEADERS) pam/pg_oauth_pam.exports
 		$$(pkg-config --cflags jansson libcurl libjwt openssl) \
 		-Wl,-Bsymbolic -Wl,--version-script=$(srcdir)/pam/pg_oauth_pam.exports \
 		-o $@ $(filter %.c,$^) $(LIBJWT_STATIC) $(JANSSON_STATIC) \
-		$$(pkg-config --libs libcurl openssl) -lpam
+		$$(pkg-config --libs libcurl openssl) -lpam -ldl
 
 $(PAM_CREDENTIAL_TEST_BIN): tests/pam/credential_test.c pam/pam_credential.c $(PAM_HEADERS)
 	@mkdir -p tests/pam

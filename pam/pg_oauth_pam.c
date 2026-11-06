@@ -16,6 +16,8 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
+#include <dlfcn.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
@@ -79,14 +81,27 @@ read_items(pam_handle_t *pamh, const char **user, const char **service)
 }
 
 /*
- * Authentication is bounded by the transport timeouts; polling PostgreSQL's
- * interrupt flag from a PAM module is a separate, later change.
+ * PostgreSQL's authentication timeout and shutdown set InterruptPending and
+ * expect long-running code to return promptly. The flag lives in the server
+ * executable, so look it up at run time instead of linking against it: the
+ * module then stays loadable and testable outside PostgreSQL, where there is
+ * no flag and nothing to poll. Returning from the validator is enough; the
+ * server processes the pending interrupt itself once PAM returns, and no
+ * PostgreSQL error is raised through this module's frames.
  */
 static bool
 cancel_requested(void *context)
 {
+	static const volatile sig_atomic_t *flag;
+	static bool resolved;
+
 	(void) context;
-	return false;
+	if (!resolved)
+	{
+		flag = dlsym(RTLD_DEFAULT, "InterruptPending");
+		resolved = true;
+	}
+	return flag != NULL && *flag != 0;
 }
 
 PG_OAUTH_PAM_EXPORT int
