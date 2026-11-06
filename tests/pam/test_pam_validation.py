@@ -212,6 +212,21 @@ def test_cache_uses_its_own_namespace(environment, cold_policy):
     assert "pg_oauth_validator.cache" not in names
 
 
+def test_oversized_cache_key_denies_instead_of_skipping_the_cache(environment):
+    _, _, idp, service_file, module, policy = environment[:6]
+    original = service_file.read_text()
+    # A parser-valid policy whose canonical cache key exceeds the 4096-byte bound.
+    long_audience = AUDIENCE + "," + "a" * 4000
+    token = idp.sign(subject="appuser")
+    try:
+        service_file.write_text(stack(module, policy.replace(AUDIENCE, long_audience)))
+        before = idp.request_counts()
+        assert not connect(environment, token)[0]
+        assert idp.request_counts() == before, "validated without the cache"
+    finally:
+        service_file.write_text(original)
+
+
 def test_policy_change_never_reuses_other_policy_cache(environment, cold_policy):
     _, _, idp, service_file, module, policy = environment[:6]
     token = idp.sign(subject="appuser")

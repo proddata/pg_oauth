@@ -109,7 +109,7 @@ PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
-.PHONY: pam-module check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols pam-integrationcheck \
+.PHONY: pam-module install-pam check-pam-install check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols pam-integrationcheck \
 	pam-check-pg18 pam-check-pg19 build-pg18 build-pg19 check-cache-key check-cache-state check-fail-closed check-http-freshness check-jwks check-jwt-envelope \
 	check-signature \
 	check-claims check-http-transport check-libcurl-runtime check-identity check-issuer-key check-metadata \
@@ -244,6 +244,28 @@ check-pam-symbols: $(PAM_MODULE)
 	  | grep -v -x -E 'ConditionVariable(Broadcast|CancelSleep|Init|PrepareToSleep|TimedSleep)|DefineCustomIntVariable|GetNamedDSMSegment|LWLock(Acquire|Initialize|NewTrancheId|RegisterTranche|Release)|MarkGUCPrefixReserved' || true); \
 	test -z "$$unexpected" || \
 	  { echo "error: PAM module has unexpected PostgreSQL symbols: $$unexpected" >&2; exit 1; }
+
+# PAM modules live in the system's PAM directory, which differs by distribution
+# (for example /usr/lib64/security or /usr/lib/<triplet>/security). Override
+# PAM_MODULE_DIR when it is not detected. Never installed by `make install`.
+PAM_MODULE_DIR ?= $(shell for dir in /usr/lib64/security /usr/lib/$$($(CC) -dumpmachine 2>/dev/null)/security /lib/security; do \
+	test -d "$$dir" && { echo "$$dir"; break; }; done)
+
+install-pam: $(PAM_MODULE)
+	@test -n "$(PAM_MODULE_DIR)" || \
+	  { echo "error: cannot detect the PAM module directory; set PAM_MODULE_DIR" >&2; exit 1; }
+	install -d -m 0755 "$(DESTDIR)$(PAM_MODULE_DIR)"
+	install -m 0755 $(PAM_MODULE) "$(DESTDIR)$(PAM_MODULE_DIR)/pg_oauth_pam$(DLSUFFIX)"
+
+# Stage an install and verify the result without touching the real system.
+check-pam-install: $(PAM_MODULE)
+	@stage=$$(mktemp -d) && trap 'rm -rf "$$stage"' EXIT && \
+	$(MAKE) -f $(firstword $(MAKEFILE_LIST)) install-pam DESTDIR="$$stage" \
+	  PAM_MODULE_DIR=/usr/lib/security VPATH="$(VPATH)" PG_CONFIG="$(PG_CONFIG)" >/dev/null && \
+	file="$$stage/usr/lib/security/pg_oauth_pam$(DLSUFFIX)" && \
+	test -f "$$file" && test "$$(stat -c %a "$$file")" = 755 && \
+	test "$$(find "$$stage" -type f | wc -l)" = 1 || \
+	  { echo "error: staged PAM install is incomplete or has wrong permissions" >&2; exit 1; }
 
 pam-integrationcheck: all $(PAM_MODULE)
 	$(PG_CONFIG) --version
@@ -622,12 +644,12 @@ pam-check-pg18:
 	@mkdir -p "$(BUILD_ROOT)/pg18/src" "$(BUILD_ROOT)/pg18/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg18" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG18_CONFIG)" EXPECTED_PG_MAJOR=18 \
-		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols pam-integrationcheck
+		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols check-pam-install pam-integrationcheck
 
 pam-check-pg19:
 	@mkdir -p "$(BUILD_ROOT)/pg19/src" "$(BUILD_ROOT)/pg19/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg19" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG19_CONFIG)" EXPECTED_PG_MAJOR=19 \
-		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols pam-integrationcheck
+		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols check-pam-install pam-integrationcheck
 
 verify-all: test-pg18 test-pg19

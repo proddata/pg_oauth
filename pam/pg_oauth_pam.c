@@ -110,6 +110,7 @@ PG_OAUTH_PAM_EXPORT int
 pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
 	PgOAuthPamPolicy policy;
+	PgOAuthPamPolicyError policy_error;
 	PgOAuthPamCredential credential = {NULL, 0};
 	PgOAuthValidatorPolicy validator_policy;
 	PgOAuthIssuerKeyCachePolicy cache_policy;
@@ -134,8 +135,14 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 	if (pam_set_data(pamh, transaction_name, NULL, clear_transaction) != PAM_SUCCESS)
 		return PAM_AUTH_ERR;
 	/* An invalid or incomplete policy denies before any credential is read. */
-	if (pg_oauth_pam_policy_parse(argc, argv, &policy) != PG_OAUTH_PAM_POLICY_OK ||
-		!pg_oauth_pam_policy_digest(&policy, digest) ||
+	policy_error = pg_oauth_pam_policy_parse(argc, argv, &policy);
+	if (policy_error != PG_OAUTH_PAM_POLICY_OK)
+	{
+		pam_syslog(pamh, LOG_ERR, "invalid module arguments: %s",
+				   pg_oauth_pam_policy_error_code(policy_error));
+		goto done;
+	}
+	if (!pg_oauth_pam_policy_digest(&policy, digest) ||
 		!read_items(pamh, &user, &service) ||
 		!pg_oauth_metadata_url_build(policy.validation.issuer, metadata_url,
 									 sizeof(metadata_url)) ||
@@ -203,6 +210,7 @@ PG_OAUTH_PAM_EXPORT int
 pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
 	PgOAuthPamPolicy policy;
+	PgOAuthPamPolicyError policy_error;
 	PgOAuthPamAccountResult result;
 	const void *data = NULL;
 	const char *user;
@@ -213,9 +221,19 @@ pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv)
 
 	(void) flags;
 	/* No authentication state means no account success, whatever else is true. */
-	if (pam_get_data(pamh, transaction_name, &data) != PAM_SUCCESS || data == NULL ||
-		pg_oauth_pam_policy_parse(argc, argv, &policy) != PG_OAUTH_PAM_POLICY_OK ||
-		!pg_oauth_pam_policy_digest(&policy, digest) ||
+	if (pam_get_data(pamh, transaction_name, &data) != PAM_SUCCESS || data == NULL)
+	{
+		pam_syslog(pamh, LOG_WARNING, "account denied: no_authentication_state");
+		return PAM_PERM_DENIED;
+	}
+	policy_error = pg_oauth_pam_policy_parse(argc, argv, &policy);
+	if (policy_error != PG_OAUTH_PAM_POLICY_OK)
+	{
+		pam_syslog(pamh, LOG_ERR, "invalid module arguments: %s",
+				   pg_oauth_pam_policy_error_code(policy_error));
+		return PAM_PERM_DENIED;
+	}
+	if (!pg_oauth_pam_policy_digest(&policy, digest) ||
 		!read_items(pamh, &user, &service) ||
 		!monotonic_ms(&monotonic_now) || (wall_time = time(NULL)) < 0)
 		return PAM_PERM_DENIED;
