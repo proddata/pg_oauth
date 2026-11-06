@@ -1,6 +1,7 @@
 # ADR 0008: PostgreSQL PAM authentication with JWT access tokens
 
-- Status: Proposed; contract and feasibility review required before implementation
+- Status: Accepted as an experimental, opt-in module; the gates under "Evidence and gates" remain required before a production release
+- Maintainer decision: 2026-11-06
 - Scope: Linux-PAM used by PostgreSQL 15, 16, 17, 18 and 19 preview; the OAuth validator remains PostgreSQL 18 and 19 only
 - Implementation language: C17, the same as the OAuth validator
 
@@ -118,7 +119,7 @@ Invalidate old state before each authentication. Publish per-handle validated
 state only after token validation and exact requested-role authorization. Bind
 it to the original role, service/profile, immutable policy generation and
 expiry/skew. Account checks deny missing or mismatched state and recheck expiry
-with the same skew and a fresh clock, adding no second grace. The proposed
+with the same skew and a fresh clock, adding no second grace. The
 maximum delay between validation completion and the account check is five
 seconds. Repeated account checks require that same valid state; a new
 authentication replaces it. Clean up on replacement and `pam_end`; process

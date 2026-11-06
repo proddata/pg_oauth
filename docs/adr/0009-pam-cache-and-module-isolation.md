@@ -1,6 +1,7 @@
 # ADR 0009: PAM cache storage and module isolation
 
-- Status: Proposed; bridge feasibility required before production PAM release
+- Status: Accepted; the release gate below must pass before a production PAM release
+- Maintainer decision: 2026-11-06
 - Scope: PostgreSQL-only Linux-PAM module on majors 15, 16, 17, 18 and 19 preview
 - Implementation language: C17
 

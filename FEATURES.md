@@ -61,13 +61,15 @@ The active release scope provides strict offline validation of signed JWT access
 - Negative unit and integration test coverage for the threat model.
 - Sanitized, stable diagnostic codes without token or secret disclosure.
 
-## Proposed scope: PostgreSQL PAM token authentication
+## Active scope: PostgreSQL PAM token authentication (experimental)
 
-Not part of the active release scope until reviewed and implemented; see
-[`ADR 0008`](docs/adr/0008-postgresql-pam-token-authentication.md) and
-[`ADR 0009`](docs/adr/0009-pam-cache-and-module-isolation.md). It exists for
-clients that can send a password but cannot perform native OAuth authentication.
-It adds no token introspection or other authentication mechanism.
+An opt-in module accepted by [`ADR 0008`](docs/adr/0008-postgresql-pam-token-authentication.md)
+and [`ADR 0009`](docs/adr/0009-pam-cache-and-module-isolation.md). It remains
+experimental: the release gate in ADR 0009 and the evidence listed in ADR 0008
+must be met before a production release, and no packaging, SELinux or
+distribution qualification beyond what those documents record is claimed. It
+exists for clients that can send a password but cannot perform native OAuth
+authentication. It adds no token introspection or other authentication mechanism.
 
 Supported PostgreSQL versions. The native OAuth validator targets PostgreSQL 18
 and 19 only, because earlier majors have no validator API. The PAM module targets
