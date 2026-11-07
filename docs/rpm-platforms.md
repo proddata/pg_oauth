@@ -172,6 +172,13 @@ writable `/dev/kvm`, QEMU, `cloud-localds`, curl, OpenSSH and tar:
 sh scripts/ci/test-selinux-vm.sh
 ```
 
+The guest image is pinned by SHA-256 and fetched by `scripts/ci/fetch-pinned-image.sh`
+from `dl.fedoraproject.org`, then `archives.fedoraproject.org`, then the
+`download.fedoraproject.org` redirector. The digest is verified after every
+download, so a source with an expired certificate, an outage or different content
+is skipped, and only the pinned bytes are ever booted. Verification is never
+disabled and only https is accepted.
+
 This boots a hash-pinned Fedora 44 x86-64 Cloud guest, builds/installs the tested
 RPM, and runs the complete suite under `postgresql_t` with global enforcement
 and no domain-permissive exception. Guest repositories remain mutable.
