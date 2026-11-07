@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
 
       - name: Validate Compose definition
         run: docker compose -f compose.external.yml config --quiet
@@ -82,6 +84,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
 
       - name: Install build dependencies
         run: ./scripts/ci/install-debian-dependencies.sh ${{ matrix.package }}
@@ -148,6 +152,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
 
       - name: Install build dependencies
         run: ./scripts/ci/install-debian-dependencies.sh ${{ matrix.pg }}
@@ -180,6 +186,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
 
       # Invoke the script directly: the make target loads PGXS, which this job
       # deliberately does not depend on.
@@ -196,6 +204,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
 
       - name: Install analysis dependencies
         run: ./scripts/ci/install-debian-dependencies.sh 19
