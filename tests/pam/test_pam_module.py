@@ -5,6 +5,7 @@ This revision of the module acquires the credential and denies unconditionally
 credential byte may reach any client or server log.
 """
 
+import contextlib
 import ctypes
 import os
 import pathlib
@@ -62,6 +63,13 @@ class Libpq:
 
     def query(self, cluster, password, sql, user="appuser"):
         """Connect over verified TLS, run one statement, return its first value."""
+        with self.session(cluster, password, user) as run:
+            return run(sql)
+
+    @contextlib.contextmanager
+    def session(self, cluster, password, user="appuser"):
+        """Hold one authenticated backend open and run statements in it, so a test
+        can observe what the PAM module left behind in that same process."""
         lib = self.lib
         lib.PQexec.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
         lib.PQexec.restype = ctypes.c_void_p
@@ -72,9 +80,8 @@ class Libpq:
         lib.PQclear.argtypes = [ctypes.c_void_p]
         lib.PQclear.restype = None
         conn = self._open(cluster, password, user)
-        try:
-            if lib.PQstatus(conn) != 0:
-                raise RuntimeError(lib.PQerrorMessage(conn).decode())
+
+        def run(sql):
             result = lib.PQexec(conn, sql.encode())
             try:
                 if lib.PQresultStatus(result) != 2:  # PGRES_TUPLES_OK
@@ -82,6 +89,11 @@ class Libpq:
                 return lib.PQgetvalue(result, 0, 0).decode()
             finally:
                 lib.PQclear(result)
+
+        try:
+            if lib.PQstatus(conn) != 0:
+                raise RuntimeError(lib.PQerrorMessage(conn).decode())
+            yield run
         finally:
             lib.PQfinish(conn)
 

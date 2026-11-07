@@ -219,12 +219,16 @@ check-symbols: all
 
 pam-module: $(PAM_MODULE)
 
+# -z nodelete: libpam dlcloses a module at pam_end, but PostgreSQL keeps pointers
+# into it (the custom setting's variable and description strings, the lock
+# tranche name) and a backend may still be inside libcurl/libjwt code. The module
+# must therefore stay mapped for the life of the backend (ADR 0009).
 $(PAM_MODULE): check-pam-pg-version $(PAM_SOURCES) $(PAM_HEADERS) $(PAM_EXPORTS)
 	@mkdir -p pam
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(PG_CPPFLAGS) -I$(includedir_server) \
 		-I$(srcdir)/src -I$(srcdir)/pam -fPIC -shared -DPG_OAUTH_CACHE_NAMESPACE_PAM \
 		$$(pkg-config --cflags jansson libcurl libjwt openssl) \
-		-Wl,-Bsymbolic -Wl,--version-script=$(srcdir)/$(PAM_EXPORTS) \
+		-Wl,-Bsymbolic -Wl,-z,nodelete -Wl,--version-script=$(srcdir)/$(PAM_EXPORTS) \
 		-o $@ $(filter %.c,$^) $(LIBJWT_STATIC) $(JANSSON_STATIC) \
 		$$(pkg-config --libs libcurl openssl) -lpam -ldl
 
@@ -256,7 +260,10 @@ check-pam-transaction: $(PAM_TRANSACTION_TEST_BIN)
 
 # Only the three PAM entry points may be visible; no validator or library
 # symbol can interpose into another module loaded in the same process.
+# The module must also be marked non-unloadable (see the link rule above).
 check-pam-symbols: $(PAM_MODULE)
+	@readelf -d $(PAM_MODULE) | grep -q 'NODELETE' || \
+	  { echo "error: PAM module is not linked with -z nodelete" >&2; exit 1; }
 	@expected="pam_sm_acct_mgmt pam_sm_authenticate pam_sm_setcred "; \
 	test -z "$(PAM_PRELOAD)" || expected="Pg_magic_func _PG_init pam_sm_acct_mgmt pam_sm_authenticate pam_sm_setcred "; \
 	exported=$$(nm -D --defined-only $(PAM_MODULE) | awk '{print $$3}' | LC_ALL=C sort | tr '\n' ' '); \
