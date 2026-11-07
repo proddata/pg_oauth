@@ -136,7 +136,7 @@ include $(PGXS)
 	check-claims check-http-transport check-libcurl-runtime check-identity check-issuer-key check-metadata \
 	check-validator \
 	check-release-artifacts \
-	check-dependency-installers check-demo-config check-dev-source \
+	check-dependency-installers check-fetch-pinned-image check-demo-config check-dev-source \
 	format formatcheck \
 	check-source-tree \
 	check-pg-version check-policy check-static-link-dependencies \
@@ -179,6 +179,9 @@ check-release-artifacts:
 
 check-dependency-installers:
 	sh "$(srcdir)/tests/ci/test_dependency_installers.sh"
+
+check-fetch-pinned-image:
+	sh "$(srcdir)/tests/ci/test_fetch_pinned_image.sh"
 
 sanitizercheck:
 	$(MAKE) dependency-spike check-http-transport check-issuer-key \
@@ -658,13 +661,13 @@ installedcheck: packagecheck
 interop-keycloak:
 	sh "$(srcdir)/scripts/interop/keycloak.sh"
 
-verify: check-release-artifacts check-dependency-installers check-demo-config check-dev-source check-symbols check-fail-closed check-policy check-cache-state check-cache-key check-http-freshness check-libcurl-runtime check-jwt-envelope \
+verify: check-release-artifacts check-dependency-installers check-fetch-pinned-image check-demo-config check-dev-source check-symbols check-fail-closed check-policy check-cache-state check-cache-key check-http-freshness check-libcurl-runtime check-jwt-envelope \
 	check-jwks check-signature check-claims check-identity check-metadata \
 	check-http-transport check-issuer-key check-validator
 
 # Fast local gate. CI and release preparation continue to use `verify`, which
 # additionally checks reproducible release artifacts.
-verify-dev: check-dependency-installers check-demo-config check-dev-source check-symbols check-fail-closed check-policy check-cache-state check-cache-key check-http-freshness check-libcurl-runtime check-jwt-envelope \
+verify-dev: check-dependency-installers check-fetch-pinned-image check-demo-config check-dev-source check-symbols check-fail-closed check-policy check-cache-state check-cache-key check-http-freshness check-libcurl-runtime check-jwt-envelope \
 	check-jwks check-signature check-claims check-identity check-metadata \
 	check-http-transport check-issuer-key check-validator
 
