@@ -538,3 +538,26 @@ def test_delegated_session_identity_is_the_role_not_the_subject(environment):
             assert "someone-else" not in identity
     assert 'identity="other" method=pam' in cluster.logs()
     assert "someone-else" not in cluster.logs()
+
+
+def test_settings_and_server_stay_usable_after_libpam_ends_the_transaction(environment):
+    """libpam may dlclose a module at pam_end. PostgreSQL keeps pointers into it
+    (the custom setting's variable and description, the lock tranche name), so a
+    backend that authenticated through PAM must survive SHOW ALL, pg_settings and
+    a configuration reload afterwards."""
+    cluster, client, idp, *_ = environment
+    token = idp.sign(subject="appuser").encode()
+    description = "Maximum number of shared PAM metadata and JWKS cache entries."
+    with client.session(cluster, token) as run:
+        assert run("SELECT current_user") == "appuser"
+        psql(cluster, "SELECT pg_reload_conf()")
+        # The backend applies the reload before it reads its next command.
+        assert run("SELECT 1") == "1"
+        run("SHOW ALL")
+        assert int(run("SELECT count(*) FROM pg_settings")) > 100
+        assert run("SELECT short_desc FROM pg_settings "
+                   "WHERE name = 'pg_oauth_pam.cache_max_entries'") == description
+        assert run("SHOW pg_oauth_pam.cache_max_entries") == "32"
+    # A backend crash makes the postmaster restart every connection.
+    assert "terminated by signal" not in cluster.logs()
+    assert client.query(cluster, token, "SELECT 1") == "1"

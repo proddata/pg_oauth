@@ -38,6 +38,19 @@ cache existing. Each artifact links its validation and cache code privately and
 binds symbols locally, so loading both in one process cannot cause either to
 call into the other's copy or share mutable static state.
 
+### The module is never unloaded
+
+libpam unloads a module when the PAM transaction ends, but the backend keeps
+running and PostgreSQL keeps pointers into the module: on 17 and later the
+custom setting's variable and description strings, and the shared cache's lock
+tranche name. After an unload, `SHOW ALL`, `pg_settings` and a configuration
+reload read freed or reused memory. A backend may also still be inside libcurl
+or libjwt code. The module is therefore linked with `-z nodelete` and stays
+mapped for the life of the backend; `make check-pam-symbols` verifies the flag
+and `test_settings_and_server_stay_usable_after_libpam_ends_the_transaction`
+exercises the failure. Never remove the flag without removing every pointer
+PostgreSQL holds into the module.
+
 ### Implemented storage on PostgreSQL 17 and later
 
 The PAM module compiles `src/shared_cache.c` privately with its own namespace:
