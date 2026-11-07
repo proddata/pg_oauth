@@ -39,8 +39,33 @@ uncommitted or untracked release inputs:
 Complete [development gates](development.md#quality-and-packaging-gates), the
 full `test-pg18`/`test-pg19` suites, static analysis, CodeQL, dependency/license
 and secret scanning, installed-path tests, TLS/robustness and provider interop.
+A release that includes the PAM module also passes the PAM gate below.
 Required failures, unexpected skips, flakes or unreproducible results block
 publication. Do not normalize reruns until green.
+
+## PAM module gate
+
+The PAM module is experimental until [ADR 0009](adr/0009-pam-cache-and-module-isolation.md)'s
+release gate is met. Do not call a release production-ready for PAM, or remove
+the experimental label from [PAM](pam.md) and `FEATURES.md`, until all of the
+following hold for the exact reviewed commit:
+
+- `make pam-check-pgNN` passes on every PostgreSQL major 15 to 19 and
+  `make pam-both-check-pgNN` on 18 and 19, with no unexpected skips (the CI
+  `PAM module / PostgreSQL N` jobs), and `make check-modules-disjoint` passes.
+- Every row of the PAM section of the
+  [traceability matrix](security/initial-review-traceability.md#pam-module-experimental-and-the-adr-0009-release-gate)
+  is **Covered**, or its gap is closed by a recorded, dated decision that names
+  a reviewer. Open gaps today are capacity isolation, lock contention, a killed
+  refresh owner and slow-DNS behavior.
+- The RPM subpackage and the SELinux enforcing run pass on each packaged
+  platform ([RPM platforms](rpm-platforms.md)), with PAM upgrade and rollback
+  rehearsed using matching module and configuration.
+- Any PAM-specific operator documentation change is reviewed with the release,
+  including the libpam preload requirement on PostgreSQL 15 and 16.
+
+A `0.x` prerelease may ship the module while it stays experimental, with the
+open gaps stated in its release notes.
 
 ## PostgreSQL-specific artifacts
 
