@@ -73,6 +73,13 @@ class CandidateTest(unittest.TestCase):
         candidates.compare(self.first, self.second)
         self.assertEqual(len((self.first / "SHA256SUMS").read_text().splitlines()), 6)
 
+    def test_debug_packages_do_not_count_as_validator_or_pam_packages(self):
+        for root in (self.first, self.second):
+            for name in ("debuginfo", "debugsource", "pam-debuginfo"):
+                path = root / f"RPMS/aarch64/postgresql18-pg_oauth_validator-{name}-0.1.3-1.aarch64.rpm"
+                path.write_bytes(b"synthetic debug package\n")
+        candidates.compare(self.first, self.second)
+
     def test_duplicate_pam_rpm_or_missing_validator_blocks_comparison(self):
         for root in (self.first, self.second):
             extra = root / "RPMS/x86_64/postgresql18-pg_oauth_validator-pam-0.1.3-1.x86_64.rpm"

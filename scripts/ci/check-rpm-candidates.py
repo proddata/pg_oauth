@@ -32,8 +32,7 @@ def inventory(root):
            if re.fullmatch(r"postgresql18-pg_oauth_validator-pam-[0-9].*\.rpm",
                            pathlib.PurePosixPath(name).name)]
     sources = [name for name in files if name.startswith("SRPMS/") and name.endswith(".src.rpm")]
-    if len(binaries) != 1 or len(pam) > 1 or len(sources) != 1 or \
-            len(packages) != len(binaries) + len(pam):
+    if len(binaries) != 1 or len(pam) > 1 or len(sources) != 1:
         raise ValueError("candidate requires one validator RPM, at most one PAM RPM and one SRPM")
     for name in ("inputs/INPUTS.sha256", "inputs/SOURCES/SHA256SUMS",
                  "inputs/SPECS/pg_oauth_validator.spec"):
