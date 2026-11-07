@@ -145,7 +145,7 @@ mutate_number(PgOAuthCacheKeyPolicy *policy, size_t index)
 }
 
 static const char *
-text(const char *value)
+string_or_empty(const char *value)
 {
 	return value != NULL ? value : "";
 }
@@ -159,7 +159,7 @@ policies_equal(const PgOAuthCacheKeyPolicy *a, const PgOAuthCacheKeyPolicy *b)
 
 	for (size_t i = 0; i < STRING_FIELDS; i++)
 	{
-		if (strcmp(text(*string_field(&x, i)), text(*string_field(&y, i))) != 0)
+		if (strcmp(string_or_empty(*string_field(&x, i)), string_or_empty(*string_field(&y, i))) != 0)
 			return false;
 	}
 	return a->resource == b->resource &&
