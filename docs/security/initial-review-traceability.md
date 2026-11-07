@@ -55,7 +55,7 @@ sources as the native validator, so the rows above apply to it; the tests below
 run the real module through libpam. The CI jobs `PAM module / PostgreSQL 15` to
 `19` run `tests/pam`, and the 18 and 19 jobs also run `tests/pam_both`. Status
 uses the same terms as above. A **Gap** row blocks a production PAM release; it
-does not block an experimental prerelease.
+does not block a prerelease, whose notes must state it.
 
 | ADR 0009 gate item | Evidence | Status and remaining gap |
 |---|---|---|

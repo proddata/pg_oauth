@@ -11,6 +11,8 @@ on:
       - 'tests/integration/**'
       - 'shared/**'
       - 'validator/**'
+      - 'pam/**'
+      - 'tests/pam/**'
       - 'Makefile'
       - 'scripts/ci/install-*.sh'
   workflow_dispatch:
