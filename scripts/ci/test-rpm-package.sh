@@ -237,9 +237,14 @@ if test -f "$work_dir/baseline/pam-package-path"; then
 	# The real-connection suite needs a disposable container. The SELinux VM
 	# gate runs a separate, focused confinement check against this package.
 	if test -f /.dockerenv; then
+		# The major-version guard test needs a second module compiled with a
+		# different expected major (`make pam-integrationcheck` builds it); the
+		# packaged module cannot be rebuilt that way, so the PAM module CI jobs
+		# cover it. Deselect only that test, by name.
 		PG_CONFIG="$PG_CONFIG_PATH" PAM_MODULE="$pam_library" \
 			OAUTH_TEST_PAM_DISPOSABLE=1 PYTHONPYCACHEPREFIX=/source/.pycache \
-			python3 -m pytest -q -o cache_dir=/source/.pytest_cache /source/tests/pam
+			python3 -m pytest -q -o cache_dir=/source/.pytest_cache /source/tests/pam \
+			-k 'not test_a_module_built_for_another_major_never_authenticates'
 		# Upgrade and rollback of the PAM package alone (ADR 0008, 0009): the
 		# baseline is installed, so replace it with the candidate and back.
 		if test -n "$candidate_package"; then
