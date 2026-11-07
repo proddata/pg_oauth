@@ -13,8 +13,8 @@
  * and parameters are checked against local policy per algorithm.
  */
 #include "jwks.h"
+#include "ascii.h"
 
-#include <ctype.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -55,7 +55,7 @@ valid_key_id(const json_t *value, size_t maximum)
 		return false;
 	for (size_t i = 0; i < length; i++)
 	{
-		if (iscntrl((unsigned char) key_id[i]))
+		if (pg_oauth_ascii_iscntrl((unsigned char) key_id[i]))
 			return false;
 	}
 	return true;
@@ -320,7 +320,7 @@ pg_oauth_jwks_select(const char *document, size_t document_length,
 		return PG_OAUTH_JWKS_INVALID_ARGUMENT;
 	for (size_t i = 0; i < key_id_length; i++)
 	{
-		if (iscntrl((unsigned char) key_id[i]))
+		if (pg_oauth_ascii_iscntrl((unsigned char) key_id[i]))
 			return PG_OAUTH_JWKS_INVALID_ARGUMENT;
 	}
 	if (document_length == 0)

@@ -14,8 +14,8 @@
  * outright rather than ignored.
  */
 #include "jwt_envelope.h"
+#include "ascii.h"
 
-#include <ctype.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -243,7 +243,7 @@ pg_oauth_jwt_envelope_parse(const char *token, size_t token_length,
 	}
 	for (size_t i = 0; i < json_string_length(value); i++)
 	{
-		if (iscntrl((unsigned char) key_id[i]))
+		if (pg_oauth_ascii_iscntrl((unsigned char) key_id[i]))
 		{
 			error = PG_OAUTH_JWT_ENVELOPE_INVALID_KEY_ID;
 			goto fail;

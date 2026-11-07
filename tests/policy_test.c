@@ -1,9 +1,11 @@
 #include "postgres.h"
 
+#include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "ascii.h"
 #include "policy.h"
 
 #undef fprintf
@@ -68,6 +70,12 @@ main(void)
 	PgOAuthPolicyConfig config = valid_config();
 	PgOAuthHbaPolicy hba = valid_hba();
 	PgOAuthValidationPolicy policy;
+
+	/*
+	 * Honour the environment's locale (run with LC_ALL=<a single-byte locale>)
+	 * to prove that classification of untrusted bytes does not depend on it.
+	 */
+	setlocale(LC_CTYPE, "");
 
 	if (pg_oauth_policy_build(&config, &hba, &policy) != PG_OAUTH_POLICY_OK)
 		fail("valid default policy was rejected");
@@ -307,6 +315,40 @@ main(void)
 	if (pg_oauth_policy_build(&config, &hba, &policy) != PG_OAUTH_POLICY_OK ||
 		strcmp(policy.role_claim, "roles") != 0)
 		fail("explicit delegated role policy was rejected");
+
+	/*
+	 * Bytes at or above 0x80 are ordinary: a valid UTF-8 path may contain
+	 * 0x80-0x9f (controls in ISO-8859-1), and a host name may not contain a
+	 * Latin-1 letter such as 0xe9 (alphanumeric in ISO-8859-1). The result must
+	 * be the same in every locale.
+	 */
+	config = valid_config();
+	hba = valid_hba();
+	config.ca_file = "/etc/ssl/caf\xe2\x80\xa6.pem";
+	if (pg_oauth_policy_build(&config, &hba, &policy) != PG_OAUTH_POLICY_OK)
+		fail("a valid UTF-8 path was rejected as containing control characters");
+	config = valid_config();
+	config.allowed_jwks_hosts = "caf\xe9.example";
+	expect_error(&config, &hba, PG_OAUTH_POLICY_INVALID_JWKS_HOSTS,
+				 "a non-ASCII host name was accepted");
+
+	/*
+	 * Character classes for untrusted bytes must not depend on the database
+	 * locale: exactly the ASCII controls, ASCII white space and ASCII
+	 * alphanumerics, and nothing at or above 0x80 (valid UTF-8 uses those).
+	 */
+	for (int byte = 0; byte < 256; byte++)
+	{
+		bool		control = byte < 0x20 || byte == 0x7f;
+		bool		space = byte == ' ' || (byte >= 9 && byte <= 13);
+		bool		alnum = (byte >= '0' && byte <= '9') ||
+			(byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z');
+
+		if (pg_oauth_ascii_iscntrl((unsigned char) byte) != control ||
+			pg_oauth_ascii_isspace((unsigned char) byte) != space ||
+			pg_oauth_ascii_isalnum((unsigned char) byte) != alnum)
+			fail("an ASCII character class depends on more than the ASCII table");
+	}
 
 	/* Every error has its own stable, non-empty, prefixed diagnostic code. */
 	for (int a = PG_OAUTH_POLICY_OK; a <= PG_OAUTH_POLICY_OPENID_ONLY_SCOPES; a++)

@@ -1,6 +1,6 @@
 #include "claims.h"
+#include "ascii.h"
 
-#include <ctype.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -30,7 +30,7 @@ valid_identity_string(const json_t *value, size_t maximum)
 
 	for (size_t i = 0; i < length; i++)
 	{
-		if (iscntrl((unsigned char) text[i]) ||
+		if (pg_oauth_ascii_iscntrl((unsigned char) text[i]) ||
 			((unsigned char) text[i] == 0xc2 && i + 1 < length &&
 			 (unsigned char) text[i + 1] >= 0x80 &&
 			 (unsigned char) text[i + 1] <= 0x9f))
@@ -91,7 +91,7 @@ validate_requested_role(const json_t *payload,
 			return PG_OAUTH_CLAIMS_INVALID_ROLES;
 		for (size_t i = 0; i < length; i++)
 		{
-			if (iscntrl((unsigned char) json_string_value(roles)[i]))
+			if (pg_oauth_ascii_iscntrl((unsigned char) json_string_value(roles)[i]))
 				return PG_OAUTH_CLAIMS_INVALID_ROLES;
 		}
 		return length == requested_length &&
@@ -112,7 +112,7 @@ validate_requested_role(const json_t *payload,
 			return PG_OAUTH_CLAIMS_INVALID_ROLES;
 		for (size_t k = 0; k < entry_length; k++)
 		{
-			if (iscntrl((unsigned char) json_string_value(entry)[k]))
+			if (pg_oauth_ascii_iscntrl((unsigned char) json_string_value(entry)[k]))
 				return PG_OAUTH_CLAIMS_INVALID_ROLES;
 		}
 		for (size_t j = 0; j < i; j++)
@@ -144,10 +144,10 @@ configured_audience_matches(const char *configured, const char *token,
 		const char *end = strchr(entry, ',');
 		const char *trimmed_end = end != NULL ? end : entry + strlen(entry);
 
-		while (*entry != '\0' && isspace((unsigned char) *entry))
+		while (*entry != '\0' && pg_oauth_ascii_isspace((unsigned char) *entry))
 			entry++;
 		while (trimmed_end > entry &&
-			   isspace((unsigned char) trimmed_end[-1]))
+			   pg_oauth_ascii_isspace((unsigned char) trimmed_end[-1]))
 			trimmed_end--;
 		if (trimmed_end == entry || ++count > maximum)
 			return false;

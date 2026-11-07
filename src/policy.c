@@ -10,10 +10,10 @@
  */
 #include "postgres.h"
 
-#include <ctype.h>
 #include <string.h>
 
 #include "policy.h"
+#include "ascii.h"
 
 #define PG_OAUTH_MAX_AUDIENCES 16
 #define PG_OAUTH_MAX_AUTHN_CLAIM_LENGTH 128
@@ -44,12 +44,12 @@ parse_token_types(const char *value, uint8_t *types)
 		size_t		length = end != NULL ? (size_t) (end - entry) : strlen(entry);
 		uint8_t		type;
 
-		while (length > 0 && isspace((unsigned char) *entry))
+		while (length > 0 && pg_oauth_ascii_isspace((unsigned char) *entry))
 		{
 			entry++;
 			length--;
 		}
-		while (length > 0 && isspace((unsigned char) entry[length - 1]))
+		while (length > 0 && pg_oauth_ascii_isspace((unsigned char) entry[length - 1]))
 			length--;
 		if (length == strlen("at+jwt") &&
 			memcmp(entry, "at+jwt", length) == 0)
@@ -83,10 +83,10 @@ validate_audiences(const char *value)
 		const char *end = strchr(entry, ',');
 		const char *trimmed_end = end != NULL ? end : entry + strlen(entry);
 
-		while (*entry != '\0' && isspace((unsigned char) *entry))
+		while (*entry != '\0' && pg_oauth_ascii_isspace((unsigned char) *entry))
 			entry++;
 		while (trimmed_end > entry &&
-			   isspace((unsigned char) trimmed_end[-1]))
+			   pg_oauth_ascii_isspace((unsigned char) trimmed_end[-1]))
 			trimmed_end--;
 
 		if (trimmed_end == entry || ++count > PG_OAUTH_MAX_AUDIENCES)
@@ -94,7 +94,7 @@ validate_audiences(const char *value)
 
 		for (const char *cursor = entry; cursor < trimmed_end; cursor++)
 		{
-			if (iscntrl((unsigned char) *cursor))
+			if (pg_oauth_ascii_iscntrl((unsigned char) *cursor))
 				return false;
 		}
 
@@ -128,12 +128,12 @@ parse_algorithms(const char *value, uint32 *algorithms)
 		size_t		length = end != NULL ? (size_t) (end - entry) : strlen(entry);
 		uint32		algorithm;
 
-		while (length > 0 && isspace((unsigned char) *entry))
+		while (length > 0 && pg_oauth_ascii_isspace((unsigned char) *entry))
 		{
 			entry++;
 			length--;
 		}
-		while (length > 0 && isspace((unsigned char) entry[length - 1]))
+		while (length > 0 && pg_oauth_ascii_isspace((unsigned char) entry[length - 1]))
 			length--;
 
 		if (length == 5 && memcmp(entry, "RS256", length) == 0)
@@ -174,8 +174,8 @@ validate_claim_name(const char *claim)
 
 	for (size_t i = 0; i < length; i++)
 	{
-		if (iscntrl((unsigned char) claim[i]) ||
-			isspace((unsigned char) claim[i]))
+		if (pg_oauth_ascii_iscntrl((unsigned char) claim[i]) ||
+			pg_oauth_ascii_isspace((unsigned char) claim[i]))
 			return false;
 	}
 
@@ -197,10 +197,10 @@ validate_jwks_hosts(const char *value)
 		const char *trimmed_end = end != NULL ? end : entry + strlen(entry);
 		size_t		length;
 
-		while (*entry != '\0' && isspace((unsigned char) *entry))
+		while (*entry != '\0' && pg_oauth_ascii_isspace((unsigned char) *entry))
 			entry++;
 		while (trimmed_end > entry &&
-			   isspace((unsigned char) trimmed_end[-1]))
+			   pg_oauth_ascii_isspace((unsigned char) trimmed_end[-1]))
 			trimmed_end--;
 		length = (size_t) (trimmed_end - entry);
 		if (length == 0 || length > PG_OAUTH_MAX_HOST_LENGTH ||
@@ -209,7 +209,7 @@ validate_jwks_hosts(const char *value)
 			return false;
 		for (const char *cursor = entry; cursor < trimmed_end; cursor++)
 		{
-			if (!(isalnum((unsigned char) *cursor) || *cursor == '.' ||
+			if (!(pg_oauth_ascii_isalnum((unsigned char) *cursor) || *cursor == '.' ||
 				  *cursor == '-'))
 				return false;
 		}
@@ -297,7 +297,7 @@ pg_oauth_policy_build(const PgOAuthPolicyConfig *config,
 		return PG_OAUTH_POLICY_INVALID_CA_FILE;
 	for (const char *cursor = config->ca_file; *cursor != '\0'; cursor++)
 	{
-		if (iscntrl((unsigned char) *cursor))
+		if (pg_oauth_ascii_iscntrl((unsigned char) *cursor))
 			return PG_OAUTH_POLICY_INVALID_CA_FILE;
 	}
 	if (config->clock_skew_ms < 0 ||
