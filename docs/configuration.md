@@ -243,8 +243,12 @@ must be the same string: there is no trailing-slash or case normalization, so
 The HBA `scope` is a space-separated list, and every listed scope must be
 present in the token, compared exactly and case-sensitively. The token's `scope`
 claim may be a space-delimited string (RFC 9068 section 2.2.3) or an array of
-strings. A malformed scope value, a duplicate entry, a non-string member or an
-over-long list denies the token.
+strings. When `scope` is absent the same rules apply to the `scp` claim, which
+providers such as Microsoft Entra ID and Okta emit instead. A token that has
+both claims is denied, not merged, so that a scope in either claim cannot
+satisfy the HBA requirement. A malformed scope value, a duplicate entry, a
+non-string member or an over-long list denies the token. Acceptance of `scp` is
+covered by unit tests only; it has not been tested against Entra ID or Okta.
 
 `exp` is required; `nbf` and `iat` are checked when present. NumericDate values
 must be JSON integers. RFC 7519 section 2 also allows non-integer values;
