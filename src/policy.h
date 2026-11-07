@@ -89,6 +89,7 @@ typedef enum PgOAuthPolicyError
 	PG_OAUTH_POLICY_OPENID_ONLY_SCOPES
 } PgOAuthPolicyError;
 
+extern const char *pg_oauth_policy_error_code(PgOAuthPolicyError error);
 extern PgOAuthPolicyError pg_oauth_policy_build(
 												const PgOAuthPolicyConfig *config, const PgOAuthHbaPolicy *hba,
 												PgOAuthValidationPolicy *policy);

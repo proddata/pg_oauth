@@ -349,3 +349,49 @@ pg_oauth_policy_build(const PgOAuthPolicyConfig *config,
 
 	return PG_OAUTH_POLICY_OK;
 }
+
+/* Stable, non-sensitive diagnostic codes; never include configuration values. */
+const char *
+pg_oauth_policy_error_code(PgOAuthPolicyError error)
+{
+	switch (error)
+	{
+		case PG_OAUTH_POLICY_OK:
+			return "policy_ok";
+		case PG_OAUTH_POLICY_INVALID_ARGUMENT:
+			return "policy_invalid_argument";
+		case PG_OAUTH_POLICY_MISSING_ISSUER:
+			return "policy_missing_issuer";
+		case PG_OAUTH_POLICY_MISSING_SCOPES:
+			return "policy_missing_scopes";
+		case PG_OAUTH_POLICY_MISSING_AUDIENCE:
+			return "policy_missing_audience";
+		case PG_OAUTH_POLICY_INVALID_AUDIENCES:
+			return "policy_invalid_audiences";
+		case PG_OAUTH_POLICY_INVALID_ALGORITHMS:
+			return "policy_invalid_algorithms";
+		case PG_OAUTH_POLICY_INVALID_TOKEN_TYPE:
+			return "policy_invalid_token_type";
+		case PG_OAUTH_POLICY_INVALID_AUTHN_CLAIM:
+			return "policy_invalid_authn_claim";
+		case PG_OAUTH_POLICY_INVALID_ROLE_CLAIM:
+			return "policy_invalid_role_claim";
+		case PG_OAUTH_POLICY_DELEGATION_MISMATCH:
+			return "policy_delegation_mismatch";
+		case PG_OAUTH_POLICY_INVALID_JWKS_HOSTS:
+			return "policy_invalid_jwks_hosts";
+		case PG_OAUTH_POLICY_INVALID_CA_FILE:
+			return "policy_invalid_ca_file";
+		case PG_OAUTH_POLICY_INVALID_CLOCK_SKEW:
+			return "policy_invalid_clock_skew";
+		case PG_OAUTH_POLICY_INVALID_TOKEN_SIZE:
+			return "policy_invalid_token_size";
+		case PG_OAUTH_POLICY_INVALID_CACHE_POLICY:
+			return "policy_invalid_cache_policy";
+		case PG_OAUTH_POLICY_UNKNOWN_POLICY:
+			return "policy_unknown_policy";
+		case PG_OAUTH_POLICY_OPENID_ONLY_SCOPES:
+			return "policy_openid_only_scopes";
+	}
+	return "policy_unknown_error";
+}

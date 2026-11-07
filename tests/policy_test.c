@@ -308,5 +308,22 @@ main(void)
 		strcmp(policy.role_claim, "roles") != 0)
 		fail("explicit delegated role policy was rejected");
 
+	/* Every error has its own stable, non-empty, prefixed diagnostic code. */
+	for (int a = PG_OAUTH_POLICY_OK; a <= PG_OAUTH_POLICY_OPENID_ONLY_SCOPES; a++)
+	{
+		const char *code = pg_oauth_policy_error_code((PgOAuthPolicyError) a);
+
+		if (code == NULL || strncmp(code, "policy_", 7) != 0 ||
+			strcmp(code, "policy_unknown_error") == 0)
+			fail("a policy error has no stable diagnostic code");
+		for (int b = a + 1; b <= PG_OAUTH_POLICY_OPENID_ONLY_SCOPES; b++)
+		{
+			if (strcmp(code, pg_oauth_policy_error_code((PgOAuthPolicyError) b)) == 0)
+				fail("two policy errors share a diagnostic code");
+		}
+	}
+	if (strcmp(pg_oauth_policy_error_code((PgOAuthPolicyError) 9999),
+			   "policy_unknown_error") != 0)
+		fail("an out-of-range policy error was not reported as unknown");
 	return EXIT_SUCCESS;
 }
