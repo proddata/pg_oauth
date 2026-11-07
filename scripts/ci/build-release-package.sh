@@ -139,6 +139,13 @@ make -C "$build_dir" -f ../source/Makefile VPATH=../source \
 	CC="$build_cc" PG_CFLAGS="$reproducible_cflags" \
 	BITCODE_CFLAGS="$reproducible_bitcode_cflags" \
 	install DESTDIR="$stage_dir"
+# The PAM module is part of the package. Its place in an operator's PAM stack
+# depends on the distribution, and libpam accepts an absolute module path, so it
+# is installed beside the validator in the PostgreSQL library directory.
+make -C "$build_dir" -f ../source/Makefile VPATH=../source \
+	PG_CONFIG="$pg_config" EXPECTED_PG_MAJOR="$pg_major" \
+	CC="$build_cc" PG_CFLAGS="$reproducible_cflags" \
+	PAM_MODULE_DIR="$($pg_config --pkglibdir)" install-pam DESTDIR="$stage_dir"
 sh "$snapshot_dir/scripts/ci/check-staged-install.sh" "$stage_dir" "$pg_config"
 
 mv "$stage_dir" "$package_root"
@@ -158,6 +165,7 @@ install -m 0644 "$jansson_license" "$license_dir/JANSSON"
 find "$package_root" -type d -exec chmod 0755 {} +
 find "$package_root" -type f -exec chmod 0644 {} +
 chmod 0755 "$package_root$($pg_config --pkglibdir)/pg_oauth_validator.so"
+chmod 0755 "$package_root$($pg_config --pkglibdir)/pg_oauth_pam.so"
 
 manifest=$package_root/BUILD-MANIFEST
 {
@@ -180,7 +188,7 @@ manifest=$package_root/BUILD-MANIFEST
 		echo "build-input-debian-snapshot: unavailable"
 	fi
 	echo "debian-packages:"
-	for package in libcurl4 libcurl4-openssl-dev libpq-dev libssl3 libssl-dev; do
+	for package in libcurl4 libcurl4-openssl-dev libpam0g libpam0g-dev libpq-dev libssl3 libssl-dev; do
 		if dpkg-query -W -f='${Package} ${Version}\n' "$package" 2>/dev/null; then
 			:
 		else

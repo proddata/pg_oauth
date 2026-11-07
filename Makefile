@@ -647,6 +647,7 @@ packagecheck: all
 	@stage="$$(mktemp -d)"; \
 	trap 'rm -rf "$$stage"' EXIT INT TERM; \
 	$(MAKE) install DESTDIR="$$stage" >/dev/null; \
+	$(MAKE) install-pam DESTDIR="$$stage" PAM_MODULE_DIR="$$($(PG_CONFIG) --pkglibdir)" >/dev/null; \
 	sh "$(srcdir)/scripts/ci/check-staged-install.sh" "$$stage" "$(PG_CONFIG)"
 
 # RELEASE_VERSION and SOURCE_DATE_EPOCH are mandatory so release artifacts are
