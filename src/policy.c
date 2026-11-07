@@ -222,6 +222,36 @@ validate_jwks_hosts(const char *value)
 	return true;
 }
 
+/*
+ * `openid` only asks the provider for an ID token (OpenID Connect Core 1.0,
+ * section 3.1.2.1); it says nothing about access to PostgreSQL. A rule whose
+ * required scopes are all `openid` would authorize any correctly signed token
+ * for the audience, so it is refused (FEATURES.md security invariants).
+ * Entries are separated by the same single space the claims check uses.
+ */
+static bool
+scopes_are_only_openid(const char *scopes)
+{
+	bool		seen = false;
+
+	while (*scopes != '\0')
+	{
+		size_t		length = strcspn(scopes, " ");
+
+		if (length != 0)
+		{
+			if (length != strlen("openid") ||
+				strncmp(scopes, "openid", length) != 0)
+				return false;
+			seen = true;
+		}
+		scopes += length;
+		if (*scopes == ' ')
+			scopes++;
+	}
+	return seen;
+}
+
 PgOAuthPolicyError
 pg_oauth_policy_build(const PgOAuthPolicyConfig *config,
 					  const PgOAuthHbaPolicy *hba,
@@ -239,6 +269,8 @@ pg_oauth_policy_build(const PgOAuthPolicyConfig *config,
 		return PG_OAUTH_POLICY_MISSING_ISSUER;
 	if (!is_nonempty(hba->required_scopes))
 		return PG_OAUTH_POLICY_MISSING_SCOPES;
+	if (scopes_are_only_openid(hba->required_scopes))
+		return PG_OAUTH_POLICY_OPENID_ONLY_SCOPES;
 	if (hba->policy_name != NULL && hba->policy_name[0] != '\0' &&
 		strcmp(hba->policy_name, "default") != 0)
 		return PG_OAUTH_POLICY_UNKNOWN_POLICY;

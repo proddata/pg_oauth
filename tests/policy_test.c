@@ -242,6 +242,27 @@ main(void)
 	expect_error(&config, &hba, PG_OAUTH_POLICY_MISSING_SCOPES,
 				 "empty required scopes were accepted");
 
+	/* `openid` only requests an ID token; it never authorizes a connection. */
+	hba = valid_hba();
+	hba.required_scopes = "openid";
+	expect_error(&config, &hba, PG_OAUTH_POLICY_OPENID_ONLY_SCOPES,
+				 "openid-only required scopes were accepted");
+	hba.required_scopes = "openid openid";
+	expect_error(&config, &hba, PG_OAUTH_POLICY_OPENID_ONLY_SCOPES,
+				 "repeated openid-only required scopes were accepted");
+	hba.required_scopes = "openid connect:postgres";
+	if (pg_oauth_policy_build(&config, &hba, &policy) != PG_OAUTH_POLICY_OK)
+		fail("openid with a connection scope was rejected");
+	hba.required_scopes = "connect:postgres openid";
+	if (pg_oauth_policy_build(&config, &hba, &policy) != PG_OAUTH_POLICY_OK)
+		fail("a connection scope followed by openid was rejected");
+	hba.required_scopes = "openid2";
+	if (pg_oauth_policy_build(&config, &hba, &policy) != PG_OAUTH_POLICY_OK)
+		fail("a scope that merely starts with openid was rejected");
+	hba.required_scopes = "OpenID";
+	if (pg_oauth_policy_build(&config, &hba, &policy) != PG_OAUTH_POLICY_OK)
+		fail("scope comparison must be case-sensitive");
+
 	hba = valid_hba();
 	hba.policy_name = "unknown";
 	expect_error(&config, &hba, PG_OAUTH_POLICY_UNKNOWN_POLICY,

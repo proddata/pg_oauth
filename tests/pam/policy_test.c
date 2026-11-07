@@ -113,6 +113,8 @@ main(void)
 	denied(PARSE(&p, "issuer=https://idp.example/", "audience=a"), PG_OAUTH_PAM_POLICY_INVALID_POLICY, &p);
 	denied(pg_oauth_pam_policy_parse(0, NULL, &p), PG_OAUTH_PAM_POLICY_INVALID_POLICY, &p);
 	denied(PARSE(&p, "issuer=", "audience=a", "scope=a"), PG_OAUTH_PAM_POLICY_INVALID_POLICY, &p);
+	denied(PARSE(&p, "issuer=https://idp.example/", "audience=a", "scope=openid"),
+		   PG_OAUTH_PAM_POLICY_INVALID_POLICY, &p);
 
 	/* Unknown, duplicate, role_claim (unsupported) and wrong-case names. */
 	denied(PARSE(&p, REQUIRED, "bogus=1"), PG_OAUTH_PAM_POLICY_UNKNOWN_ARGUMENT, &p);
