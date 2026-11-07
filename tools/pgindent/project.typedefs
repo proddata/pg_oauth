@@ -78,3 +78,12 @@ time_t
 uint32_t
 uint64_t
 uint8_t
+PgOAuthPamCredential
+PgOAuthPamCredentialError
+PgOAuthPamPolicy
+PgOAuthPamPolicyError
+PgOAuthPamTransaction
+PgOAuthPamAccountResult
+ArgumentKind
+ArgumentSpec
+Behavior

@@ -39,4 +39,4 @@ sort -u "$postgres_typedefs" "$project_typedefs" >"$typedefs"
 
 cd "$repo_root"
 "$pgindent" $check_option --typedefs="$typedefs" \
-	--indent="$pg_bsd_indent" src tests
+	--indent="$pg_bsd_indent" src pam tests

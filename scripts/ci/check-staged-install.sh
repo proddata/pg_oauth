@@ -37,8 +37,8 @@ bitcode_dir="$stage$pkglibdir/bitcode/pg_oauth_validator"
 if test -d "$bitcode_dir"; then
     test -f "$stage$pkglibdir/bitcode/pg_oauth_validator.index.bc"
     bitcode_count=$(find "$bitcode_dir" -type f -name '*.bc' | wc -l | tr -d ' ')
-    test "$bitcode_count" -eq 18
-    expected_count=25
+    test "$bitcode_count" -eq 19
+    expected_count=26
 else
     expected_count=6
 fi

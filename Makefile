@@ -5,7 +5,7 @@ OBJS = src/pg_oauth_validator.o src/config.o src/hba_policy.o src/policy.o \
 	src/cache_state.o src/cache_key.o src/shared_cache.o src/http_freshness.o \
 	src/http_transport.o src/metadata.o src/jwks.o src/base64url.o \
 	src/jwt_envelope.o src/signature.o src/claims.o src/identity.o \
-	src/issuer_key.o src/validator.o
+	src/issuer_key.o src/validator.o src/validator_policy.o
 TEST_BIN = tests/fail_closed_test
 POLICY_TEST_BIN = tests/policy_test
 JWT_ENVELOPE_TEST_BIN = tests/jwt_envelope_test
@@ -26,6 +26,27 @@ OAUTH_TEST_CLIENT_PATH = $(CURDIR)/$(OAUTH_TEST_CLIENT)
 CACHE_PROBE = tests/integration/cache_probe$(DLSUFFIX)
 CACHE_PROBE_PATH = $(CURDIR)/$(CACHE_PROBE)
 VALIDATOR_LIBRARY ?= $(CURDIR)/$(MODULE_big)$(DLSUFFIX)
+# The PAM module is an opt-in, independent artifact (ADR 0008); `all` never
+# builds it, so OAuth-only builds need no PAM development files.
+PAM_MODULE = pam/pg_oauth_pam$(DLSUFFIX)
+# The validation pipeline is compiled privately into the PAM module; nothing from
+# the OAuth module or the PostgreSQL glue (config, HBA, shared cache) is used.
+PAM_VALIDATION_SOURCES = src/policy.c src/validator_policy.c src/validator.c \
+	src/issuer_key.c src/http_transport.c src/http_freshness.c src/cache_key.c \
+	src/cache_state.c src/metadata.c src/signature.c src/jwks.c \
+	src/jwt_envelope.c src/claims.c src/identity.c src/base64url.c
+PAM_SOURCES = pam/pg_oauth_pam.c pam/pam_credential.c pam/pam_policy.c \
+	pam/pam_transaction.c pam/pam_cache.c src/shared_cache.c $(PAM_VALIDATION_SOURCES)
+PAM_HEADERS = pam/pam_credential.h pam/pam_policy.h pam/pam_transaction.h pam/pam_cache.h \
+	$(wildcard $(srcdir)/src/*.h)
+# Before PostgreSQL 17 the module is also preloaded (ADR 0009), which needs the
+# magic block and _PG_init exported in addition to the three PAM entry points.
+PAM_PG_MAJOR = $(shell $(PG_CONFIG) --version | sed -E 's/^PostgreSQL ([0-9]+).*/\1/')
+PAM_PRELOAD = $(filter 15 16,$(PAM_PG_MAJOR))
+PAM_EXPORTS = pam/pg_oauth_pam$(if $(PAM_PRELOAD),_preload).exports
+PAM_CREDENTIAL_TEST_BIN = tests/pam/credential_test
+PAM_POLICY_TEST_BIN = tests/pam/policy_test
+PAM_TRANSACTION_TEST_BIN = tests/pam/transaction_test
 LIBJWT_SPIKE_BIN = tests/dependency/libjwt_spike
 LIBJWT_FUZZ_BIN = tests/fuzz/libjwt_inputs_fuzz
 JWT_ENVELOPE_FUZZ_BIN = tests/fuzz/jwt_envelope_fuzz
@@ -41,6 +62,9 @@ IDENTITY_FUZZ_CORPUS = .identity-fuzz-corpus
 METADATA_FUZZ_CORPUS = .metadata-fuzz-corpus
 SOURCE_DIR := $(abspath $(dir $(firstword $(MAKEFILE_LIST))))
 BUILD_ROOT ?= $(SOURCE_DIR)/build
+PG15_CONFIG ?= pg_config
+PG16_CONFIG ?= pg_config
+PG17_CONFIG ?= pg_config
 PG18_CONFIG ?= pg_config
 PG19_CONFIG ?= pg_config
 LIBJWT_STATIC := $(shell pkg-config --variable=libdir libjwt 2>/dev/null)/libjwt.a
@@ -68,6 +92,7 @@ EXTRA_CLEAN = $(TEST_BIN) $(POLICY_TEST_BIN) $(JWT_ENVELOPE_TEST_BIN) \
 	$(LIBJWT_FUZZ_CORPUS) $(JWT_ENVELOPE_FUZZ_CORPUS) \
 	$(JWKS_FUZZ_CORPUS) $(CLAIMS_FUZZ_CORPUS) $(IDENTITY_FUZZ_CORPUS) \
 	$(METADATA_FUZZ_CORPUS) \
+	$(PAM_MODULE) $(PAM_CREDENTIAL_TEST_BIN) $(PAM_POLICY_TEST_BIN) $(PAM_TRANSACTION_TEST_BIN) \
 	.ci-analysis \
 	tests/integration/__pycache__ tests/interop/keycloak/__pycache__
 
@@ -92,7 +117,8 @@ PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
-.PHONY: build-pg18 build-pg19 check-cache-key check-cache-state check-fail-closed check-http-freshness check-jwks check-jwt-envelope \
+.PHONY: pam-module install-pam check-pam-install check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols pam-integrationcheck \
+	pam-both-check-pg18 pam-both-check-pg19 check-modules-disjoint pam-bothcheck pam-check-pg15 pam-check-pg16 pam-check-pg17 pam-check-pg18 pam-check-pg19 check-pam-pg-version build-pg18 build-pg19 check-cache-key check-cache-state check-fail-closed check-http-freshness check-jwks check-jwt-envelope \
 	check-signature \
 	check-claims check-http-transport check-libcurl-runtime check-identity check-issuer-key check-metadata \
 	check-validator \
@@ -154,6 +180,20 @@ fuzz-smoke:
 # Prevent compilation from starting with incompatible server headers.
 $(OBJS): | check-pg-version
 
+# The PAM module supports PostgreSQL 15 to 19; the native validator needs 18 or 19.
+check-pam-pg-version:
+	@version="$$($(PG_CONFIG) --version)"; \
+	case "$$version" in \
+	  "PostgreSQL 15"*|"PostgreSQL 16"*|"PostgreSQL 17"*|"PostgreSQL 18"*|"PostgreSQL 19"*) ;; \
+	  *) echo "error: PostgreSQL 15 to 19 pg_config is required (found: $$version)" >&2; exit 1 ;; \
+	esac; \
+	if test -n "$(EXPECTED_PG_MAJOR)"; then \
+	  case "$$version" in \
+	    "PostgreSQL $(EXPECTED_PG_MAJOR)"*) ;; \
+	    *) echo "error: PostgreSQL $(EXPECTED_PG_MAJOR) pg_config is required (found: $$version)" >&2; exit 1 ;; \
+	  esac; \
+	fi
+
 check-pg-version:
 	@version="$$($(PG_CONFIG) --version)"; \
 	case "$$version" in \
@@ -174,6 +214,103 @@ check-static-link-dependencies:
 check-symbols: all
 	@nm $(MODULE_big)$(DLSUFFIX) | grep -q '_PG_oauth_validator_module_init' || \
 	  { echo "error: validator initialization symbol is not exported" >&2; exit 1; }
+
+pam-module: $(PAM_MODULE)
+
+$(PAM_MODULE): check-pam-pg-version $(PAM_SOURCES) $(PAM_HEADERS) $(PAM_EXPORTS)
+	@mkdir -p pam
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(PG_CPPFLAGS) -I$(includedir_server) \
+		-I$(srcdir)/src -I$(srcdir)/pam -fPIC -shared -DPG_OAUTH_CACHE_NAMESPACE_PAM \
+		$$(pkg-config --cflags jansson libcurl libjwt openssl) \
+		-Wl,-Bsymbolic -Wl,--version-script=$(srcdir)/$(PAM_EXPORTS) \
+		-o $@ $(filter %.c,$^) $(LIBJWT_STATIC) $(JANSSON_STATIC) \
+		$$(pkg-config --libs libcurl openssl) -lpam -ldl
+
+$(PAM_CREDENTIAL_TEST_BIN): tests/pam/credential_test.c pam/pam_credential.c $(PAM_HEADERS)
+	@mkdir -p tests/pam
+	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow -I$(srcdir)/pam \
+		$(DEPENDENCY_SANITIZER_FLAGS) -o $@ $(filter %.c,$^)
+
+check-pam-credential: check-pam-pg-version $(PAM_CREDENTIAL_TEST_BIN)
+	./$(PAM_CREDENTIAL_TEST_BIN)
+
+$(PAM_POLICY_TEST_BIN): tests/pam/policy_test.c pam/pam_policy.c src/policy.c $(PAM_HEADERS)
+	@mkdir -p tests/pam
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(PG_CPPFLAGS) -I$(includedir_server) \
+		-I$(srcdir)/src -I$(srcdir)/pam -o $@ $(filter %.c,$^) \
+		$$(pkg-config --libs openssl)
+
+check-pam-policy: $(PAM_POLICY_TEST_BIN)
+	./$(PAM_POLICY_TEST_BIN)
+
+$(PAM_TRANSACTION_TEST_BIN): tests/pam/transaction_test.c pam/pam_transaction.c src/claims.c $(PAM_HEADERS)
+	@mkdir -p tests/pam
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(PG_CPPFLAGS) -I$(includedir_server) \
+		-I$(srcdir)/src -I$(srcdir)/pam $$(pkg-config --cflags jansson) \
+		-o $@ $(filter %.c,$^) $$(pkg-config --libs jansson)
+
+check-pam-transaction: $(PAM_TRANSACTION_TEST_BIN)
+	./$(PAM_TRANSACTION_TEST_BIN)
+
+# Only the three PAM entry points may be visible; no validator or library
+# symbol can interpose into another module loaded in the same process.
+check-pam-symbols: $(PAM_MODULE)
+	@expected="pam_sm_acct_mgmt pam_sm_authenticate pam_sm_setcred "; \
+	test -z "$(PAM_PRELOAD)" || expected="Pg_magic_func _PG_init pam_sm_acct_mgmt pam_sm_authenticate pam_sm_setcred "; \
+	exported=$$(nm -D --defined-only $(PAM_MODULE) | awk '{print $$3}' | LC_ALL=C sort | tr '\n' ' '); \
+	test "$$exported" = "$$expected" || \
+	  { echo "error: unexpected PAM module exports: $$exported" >&2; exit 1; }
+	@# PostgreSQL symbols are resolved from the server at load time. Only the
+	@# shared-cache and setting calls below are allowed; any other server
+	@# dependency must be added here deliberately (ADR 0009).
+	@unexpected=$$(nm -D --undefined-only $(PAM_MODULE) | awk '{print $$2}' | sed 's/@.*//' \
+	  | grep -E '^(ConditionVariable|DefineCustom|GetNamed|LWLock|MarkGUC|palloc|pfree|repalloc|pg_|elog|err|Memory|Process|proc_|Wait|Interrupt|Latch|Shmem|dsm_|BackgroundWorker|Check|Resource|Set|Get)' \
+	  | grep -v -x -E 'ConditionVariable(Broadcast|CancelSleep|Init|PrepareToSleep|TimedSleep)|DefineCustomIntVariable|GetNamedDSMSegment|LWLock(Acquire|Initialize|NewTrancheId|RegisterTranche|Release)|MarkGUCPrefixReserved$(if $(PAM_PRELOAD),|AddinShmemInitLock|RequestAddinShmemSpace|ShmemInitStruct|shmem_(request|startup)_hook|process_shared_preload_libraries_in_progress|err(start|start_cold|code|msg|finish))' || true); \
+	test -z "$$unexpected" || \
+	  { echo "error: PAM module has unexpected PostgreSQL symbols: $$unexpected" >&2; exit 1; }
+
+# PAM modules live in the system's PAM directory, which differs by distribution
+# (for example /usr/lib64/security or /usr/lib/<triplet>/security). Override
+# PAM_MODULE_DIR when it is not detected. Never installed by `make install`.
+PAM_MODULE_DIR ?= $(shell for dir in /usr/lib64/security /usr/lib/$$($(CC) -dumpmachine 2>/dev/null)/security /lib/security; do \
+	test -d "$$dir" && { echo "$$dir"; break; }; done)
+
+install-pam: $(PAM_MODULE)
+	@test -n "$(PAM_MODULE_DIR)" || \
+	  { echo "error: cannot detect the PAM module directory; set PAM_MODULE_DIR" >&2; exit 1; }
+	install -d -m 0755 "$(DESTDIR)$(PAM_MODULE_DIR)"
+	install -m 0755 $(PAM_MODULE) "$(DESTDIR)$(PAM_MODULE_DIR)/pg_oauth_pam$(DLSUFFIX)"
+
+# Stage an install and verify the result without touching the real system.
+check-pam-install: $(PAM_MODULE)
+	@stage=$$(mktemp -d) && trap 'rm -rf "$$stage"' EXIT && \
+	$(MAKE) -f $(firstword $(MAKEFILE_LIST)) install-pam DESTDIR="$$stage" \
+	  PAM_MODULE_DIR=/usr/lib/security VPATH="$(VPATH)" PG_CONFIG="$(PG_CONFIG)" >/dev/null && \
+	file="$$stage/usr/lib/security/pg_oauth_pam$(DLSUFFIX)" && \
+	test -f "$$file" && test "$$(stat -c %a "$$file")" = 755 && \
+	test "$$(find "$$stage" -type f | wc -l)" = 1 || \
+	  { echo "error: staged PAM install is incomplete or has wrong permissions" >&2; exit 1; }
+
+# The native validator and the PAM module installed together (PostgreSQL 18, 19).
+# Their exported symbol sets must be disjoint so neither can interpose on the
+# other when both are loaded into one process.
+check-modules-disjoint: all $(PAM_MODULE)
+	@oauth=$$(nm -D --defined-only $(MODULE_big)$(DLSUFFIX) | awk '{print $$3}' | LC_ALL=C sort); \
+	pam=$$(nm -D --defined-only $(PAM_MODULE) | awk '{print $$3}' | LC_ALL=C sort); \
+	shared=$$(printf '%s\n' "$$oauth" "$$pam" | LC_ALL=C sort | uniq -d); \
+	test -z "$$shared" || { echo "error: modules export shared symbols: $$shared" >&2; exit 1; }
+
+pam-bothcheck: all $(PAM_MODULE) $(OAUTH_TEST_CLIENT_PATH) check-modules-disjoint
+	PG_CONFIG="$(PG_CONFIG)" VALIDATOR_LIBRARY="$(VALIDATOR_LIBRARY)" \
+		OAUTH_TEST_CLIENT="$(OAUTH_TEST_CLIENT_PATH)" PAM_MODULE="$(CURDIR)/$(PAM_MODULE)" \
+		PYTHONPYCACHEPREFIX="$(CURDIR)/.pycache" \
+		python3 -m pytest -q -o cache_dir="$(CURDIR)/.pytest_cache" "$(srcdir)/tests/pam_both"
+
+pam-integrationcheck: check-pam-pg-version $(PAM_MODULE)
+	$(PG_CONFIG) --version
+	PG_CONFIG="$(PG_CONFIG)" \
+		PAM_MODULE="$(CURDIR)/$(PAM_MODULE)" PYTHONPYCACHEPREFIX="$(CURDIR)/.pycache" \
+		python3 -m pytest -q -o cache_dir="$(CURDIR)/.pytest_cache" "$(srcdir)/tests/pam"
 
 check-libjwt-version:
 	@pkg-config --atleast-version=3.3.3 libjwt || \
@@ -541,5 +678,45 @@ clean-pg19:
 	@mkdir -p "$(BUILD_ROOT)/pg19/src" "$(BUILD_ROOT)/pg19/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg19" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG19_CONFIG)" EXPECTED_PG_MAJOR=19 clean
+
+pam-check-pg15:
+	@mkdir -p "$(BUILD_ROOT)/pg15/src" "$(BUILD_ROOT)/pg15/tests/integration"
+	$(MAKE) -C "$(BUILD_ROOT)/pg15" -f "$(SOURCE_DIR)/Makefile" \
+		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG15_CONFIG)" EXPECTED_PG_MAJOR=15 \
+		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols check-pam-install pam-integrationcheck
+
+pam-check-pg16:
+	@mkdir -p "$(BUILD_ROOT)/pg16/src" "$(BUILD_ROOT)/pg16/tests/integration"
+	$(MAKE) -C "$(BUILD_ROOT)/pg16" -f "$(SOURCE_DIR)/Makefile" \
+		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG16_CONFIG)" EXPECTED_PG_MAJOR=16 \
+		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols check-pam-install pam-integrationcheck
+
+pam-check-pg17:
+	@mkdir -p "$(BUILD_ROOT)/pg17/src" "$(BUILD_ROOT)/pg17/tests/integration"
+	$(MAKE) -C "$(BUILD_ROOT)/pg17" -f "$(SOURCE_DIR)/Makefile" \
+		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG17_CONFIG)" EXPECTED_PG_MAJOR=17 \
+		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols check-pam-install pam-integrationcheck
+
+pam-both-check-pg18:
+	@mkdir -p "$(BUILD_ROOT)/pg18/src" "$(BUILD_ROOT)/pg18/tests/integration"
+	$(MAKE) -C "$(BUILD_ROOT)/pg18" -f "$(SOURCE_DIR)/Makefile" \
+		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG18_CONFIG)" EXPECTED_PG_MAJOR=18 pam-bothcheck
+
+pam-check-pg18:
+	@mkdir -p "$(BUILD_ROOT)/pg18/src" "$(BUILD_ROOT)/pg18/tests/integration"
+	$(MAKE) -C "$(BUILD_ROOT)/pg18" -f "$(SOURCE_DIR)/Makefile" \
+		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG18_CONFIG)" EXPECTED_PG_MAJOR=18 \
+		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols check-pam-install pam-integrationcheck
+
+pam-both-check-pg19:
+	@mkdir -p "$(BUILD_ROOT)/pg19/src" "$(BUILD_ROOT)/pg19/tests/integration"
+	$(MAKE) -C "$(BUILD_ROOT)/pg19" -f "$(SOURCE_DIR)/Makefile" \
+		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG19_CONFIG)" EXPECTED_PG_MAJOR=19 pam-bothcheck
+
+pam-check-pg19:
+	@mkdir -p "$(BUILD_ROOT)/pg19/src" "$(BUILD_ROOT)/pg19/tests/integration"
+	$(MAKE) -C "$(BUILD_ROOT)/pg19" -f "$(SOURCE_DIR)/Makefile" \
+		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG19_CONFIG)" EXPECTED_PG_MAJOR=19 \
+		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols check-pam-install pam-integrationcheck
 
 verify-all: test-pg18 test-pg19

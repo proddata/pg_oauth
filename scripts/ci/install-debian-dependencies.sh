@@ -4,13 +4,32 @@ set -eu
 
 usage()
 {
-	echo "usage: $0 18|19" >&2
+	echo "usage: $0 15|16|17|18|19" >&2
 	exit 2
 }
 
 test "$#" -eq 1 || usage
 pg_major=$1
+ca_certificates_version=20230311+deb12u1
 case "$pg_major" in
+	15)
+		pg_dev_version=15.19-1.pgdg12+2
+		debian_snapshot=20261104T212339Z
+		ssl_version=3.0.22-1~deb12u2
+		ca_certificates_version=20250419~deb12u2
+		;;
+	16)
+		pg_dev_version=16.15-1.pgdg12+2
+		debian_snapshot=20261104T212339Z
+		ssl_version=3.0.22-1~deb12u2
+		ca_certificates_version=20250419~deb12u2
+		;;
+	17)
+		pg_dev_version=17.11-1.pgdg12+2
+		debian_snapshot=20261104T212339Z
+		ssl_version=3.0.22-1~deb12u2
+		ca_certificates_version=20250419~deb12u2
+		;;
 	18)
 		pg_dev_version=18.6-1.pgdg12+2
 		debian_snapshot=20260803T000000Z
@@ -56,9 +75,10 @@ printf '%s\n' 'Acquire::Check-Valid-Until "false";' \
 # scripts/ci/install-libjwt.sh for those pinned source builds.
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+	--allow-downgrades \
 	build-essential=12.9 \
 	bison=2:3.8.2+dfsg-1+b1 \
-	ca-certificates=20230311+deb12u1 \
+	ca-certificates=$ca_certificates_version \
 	clang=1:14.0-55.7~deb12u1 \
 	clang-tools=1:14.0-55.7~deb12u1 \
 	cmake=3.25.1-1 \
@@ -68,9 +88,11 @@ DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
 	libclang-rt-dev=1:14.0-55.7~deb12u1 \
 	libcurl4-openssl-dev=7.88.1-10+deb12u15 \
 	libkrb5-dev=1.20.1-2+deb12u5 \
+	libpam0g-dev=1.5.2-6+deb12u2 \
 	libssl-dev=$ssl_version \
 	openssl=$ssl_version \
 	pkg-config=1.8.1-1 \
+	libpq5=$pg_dev_version \
 	libpq-dev=$pg_dev_version \
 	postgresql-server-dev-$pg_major=$pg_dev_version \
 	python3=3.11.2-1+b1 \
@@ -93,7 +115,9 @@ check_version libcurl4-openssl-dev 7.88.1-10+deb12u15
 check_version libssl-dev "$ssl_version"
 check_version bison 2:3.8.2+dfsg-1+b1
 check_version flex 2.6.4-8.2
+check_version libpq5 "$pg_dev_version"
 check_version libpq-dev "$pg_dev_version"
+check_version libpam0g-dev 1.5.2-6+deb12u2
 check_version postgresql-server-dev-$pg_major "$pg_dev_version"
 check_version python3-pytest-xdist 3.1.0-1
 

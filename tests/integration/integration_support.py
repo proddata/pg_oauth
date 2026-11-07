@@ -41,12 +41,13 @@ class TemporaryPostgres:
                  ca_file="", server_certificate=None, server_key=None,
                  identity_claim="sub", role_claim="",
                  delegate_ident_mapping=False, hba_users="all",
-                 refresh_wait_timeout="5s", extra_config=""):
+                 refresh_wait_timeout="5s", extra_config="", hba_lines=None):
         self.pg_config = pathlib.Path(pg_config)
         self.bindir = pathlib.Path(
             command(self.pg_config, "--bindir").stdout.strip()
         )
-        self.validator_library = pathlib.Path(validator_library).resolve()
+        self.validator_library = (None if validator_library is None
+                                  else pathlib.Path(validator_library).resolve())
         version = command(self.pg_config, "--version").stdout
         match = re.search(r"PostgreSQL (\d+)", version)
         if match is None:
@@ -66,6 +67,7 @@ class TemporaryPostgres:
         self.hba_users = hba_users
         self.refresh_wait_timeout = refresh_wait_timeout
         self.extra_config = extra_config
+        self.hba_lines = hba_lines
         self.port = unused_port()
         self.selinux = os.environ.get("OAUTH_TEST_SELINUX") == "1"
         self.root = pathlib.Path(tempfile.mkdtemp(
@@ -91,7 +93,6 @@ class TemporaryPostgres:
             user="postgres",
         )
 
-        library_dir = str(self.validator_library.parent).replace("'", "''")
         # Socket defaults vary by distribution (PostgreSQL 18, section 19.3.1).
         # Keep administrative connections inside this cluster's private root.
         socket_dir = str(self.root).replace("'", "''")
@@ -121,11 +122,12 @@ class TemporaryPostgres:
                 "ssl_key_file = 'server.key'\n"
             )
             hba_type = "hostssl"
-        with (self.data / "postgresql.conf").open("a", encoding="utf-8") as config:
-            config.write(
-                f"\nlisten_addresses = '127.0.0.1'\n"
-                f"port = {self.port}\n"
-                f"unix_socket_directories = '{socket_dir}'\n"
+        # Without a validator library the cluster is configured for PAM only: the
+        # OAuth settings do not exist before PostgreSQL 18.
+        oauth_configuration = ""
+        if self.validator_library is not None:
+            library_dir = str(self.validator_library.parent).replace("'", "''")
+            oauth_configuration = (
                 f"dynamic_library_path = '{library_dir}'\n"
                 "oauth_validator_libraries = 'pg_oauth_validator'\n"
                 f"pg_oauth_validator.audiences = '{audience}'\n"
@@ -136,6 +138,13 @@ class TemporaryPostgres:
                 f"pg_oauth_validator.allow_insecure_http = "
                 f"{'on' if self.allow_insecure_http else 'off'}\n"
                 f"pg_oauth_validator.ca_file = '{ca_file}'\n"
+            )
+        with (self.data / "postgresql.conf").open("a", encoding="utf-8") as config:
+            config.write(
+                f"\nlisten_addresses = '127.0.0.1'\n"
+                f"port = {self.port}\n"
+                f"unix_socket_directories = '{socket_dir}'\n"
+                f"{oauth_configuration}"
                 f"{self.extra_config}"
                 f"{ssl_configuration}"
                 # RPM samples enable the collector; keep all diagnostics in
@@ -157,8 +166,10 @@ class TemporaryPostgres:
         if self.policy is not None:
             options += f" validator.policy={self.policy}"
         (self.data / "pg_hba.conf").write_text(
-            "local all all trust\n"
-            f"{hba_type} all {self.hba_users} 127.0.0.1/32 oauth {options}\n",
+            self.hba_lines if self.hba_lines is not None else (
+                "local all all trust\n"
+                f"{hba_type} all {self.hba_users} 127.0.0.1/32 oauth {options}\n"
+            ),
             encoding="utf-8",
         )
         if self.identity_map is not None:

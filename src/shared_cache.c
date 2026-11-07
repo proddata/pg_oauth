@@ -3,14 +3,40 @@
 #include <string.h>
 
 #include "storage/condition_variable.h"
+#if PG_VERSION_NUM >= 170000
 #include "storage/dsm_registry.h"
+#else
+#include "miscadmin.h"
+#include "storage/ipc.h"
+#include "storage/shmem.h"
+#endif
 #include "storage/lwlock.h"
 #include "utils/wait_event.h"
 
 #include "shared_cache.h"
 
+/*
+ * PostgreSQL 17 introduced the named DSM registry, which lets a module attach
+ * shared storage on first use. Before 17 only the postmaster can create shared
+ * memory, so the PAM module must be listed in shared_preload_libraries (ADR
+ * 0009). The OAuth validator never targets those majors.
+ */
+#if PG_VERSION_NUM < 170000 && !defined(PG_OAUTH_CACHE_NAMESPACE_PAM)
+#error "the OAuth validator's shared cache requires PostgreSQL 17 or later"
+#endif
+
+/*
+ * The OAuth validator and the PAM module compile this file privately and must
+ * never share segments, locks or capacity (ADR 0009), so the PAM build selects
+ * its own namespace.
+ */
+#ifdef PG_OAUTH_CACHE_NAMESPACE_PAM
+#define PG_OAUTH_SHARED_CACHE_NAME "pg_oauth_pam.cache.v1"
+#define PG_OAUTH_SHARED_CACHE_TRANCHE "pg_oauth_pam_cache"
+#else
 #define PG_OAUTH_SHARED_CACHE_NAME "pg_oauth_validator.cache.v3"
 #define PG_OAUTH_SHARED_CACHE_TRANCHE "pg_oauth_validator_cache"
+#endif
 #define PG_OAUTH_SHARED_CACHE_MAGIC UINT32_C(0x50474f43)
 #define PG_OAUTH_SHARED_CACHE_VERSION UINT32_C(3)
 
@@ -43,19 +69,10 @@ shared_cache_size(int capacity, Size *size)
 }
 
 static void
-#if PG_VERSION_NUM >= 190000
-initialize_shared_cache(void *memory, void *argument)
-#else
-initialize_shared_cache(void *memory)
-#endif
+initialize_state(PgOAuthSharedCacheState *state, int capacity)
 {
-	PgOAuthSharedCacheState *state = memory;
-	int			capacity = configured_capacity;
 	Size		segment_size;
 
-#if PG_VERSION_NUM >= 190000
-	(void) argument;
-#endif
 	if (!shared_cache_size(capacity, &segment_size))
 		return;
 	memset(state, 0, segment_size);
@@ -72,6 +89,21 @@ initialize_shared_cache(void *memory)
 	state->magic = PG_OAUTH_SHARED_CACHE_MAGIC;
 }
 
+#if PG_VERSION_NUM >= 170000
+static void
+#if PG_VERSION_NUM >= 190000
+initialize_shared_cache(void *memory, void *argument)
+#else
+initialize_shared_cache(void *memory)
+#endif
+{
+#if PG_VERSION_NUM >= 190000
+	(void) argument;
+#endif
+	initialize_state(memory, configured_capacity);
+}
+#endif
+
 bool
 pg_oauth_shared_cache_configure_capacity(int capacity)
 {
@@ -83,6 +115,7 @@ pg_oauth_shared_cache_configure_capacity(int capacity)
 	return shared_state == NULL || shared_state->capacity == (uint32) capacity;
 }
 
+#if PG_VERSION_NUM >= 170000
 bool
 pg_oauth_shared_cache_attach(void)
 {
@@ -122,6 +155,87 @@ pg_oauth_shared_cache_attach(void)
 	(void) found;
 	return true;
 }
+
+#else							/* PostgreSQL 15 and 16: preloaded shared
+								 * memory */
+
+static shmem_request_hook_type previous_shmem_request_hook;
+static shmem_startup_hook_type previous_shmem_startup_hook;
+static bool attached;
+
+static void
+preload_shmem_request(void)
+{
+	Size		segment_size;
+
+	if (previous_shmem_request_hook != NULL)
+		previous_shmem_request_hook();
+	if (shared_cache_size(configured_capacity, &segment_size))
+		RequestAddinShmemSpace(segment_size);
+}
+
+static void
+preload_shmem_startup(void)
+{
+	bool		found;
+	Size		segment_size;
+
+	if (previous_shmem_startup_hook != NULL)
+		previous_shmem_startup_hook();
+	shared_state = NULL;
+	if (!shared_cache_size(configured_capacity, &segment_size))
+		return;
+	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
+	shared_state = ShmemInitStruct(PG_OAUTH_SHARED_CACHE_NAME, segment_size, &found);
+
+	/*
+	 * Shared memory is recreated after a crash restart and is then not found,
+	 * so initialization always happens before any backend can attach.
+	 */
+	if (shared_state != NULL && !found)
+		initialize_state(shared_state, configured_capacity);
+	LWLockRelease(AddinShmemInitLock);
+}
+
+void
+pg_oauth_shared_cache_preload(int capacity)
+{
+	Size		ignored;
+
+	if (!shared_cache_size(capacity, &ignored))
+		return;
+	configured_capacity = capacity;
+	previous_shmem_request_hook = shmem_request_hook;
+	shmem_request_hook = preload_shmem_request;
+	previous_shmem_startup_hook = shmem_startup_hook;
+	shmem_startup_hook = preload_shmem_startup;
+}
+
+/*
+ * Without the preload there is no shared storage: report unavailable so the
+ * caller denies instead of validating without refresh coordination.
+ */
+bool
+pg_oauth_shared_cache_attach(void)
+{
+	if (shared_state == NULL)
+		return false;
+	if (attached)
+		return shared_state->capacity == (uint32) configured_capacity;
+	if (shared_state->magic != PG_OAUTH_SHARED_CACHE_MAGIC ||
+		shared_state->version != PG_OAUTH_SHARED_CACHE_VERSION ||
+		shared_state->capacity != (uint32) configured_capacity)
+		return false;
+	/* Tranche names are per-process before PostgreSQL 19. */
+	LWLockRegisterTranche(shared_state->tranche_id, PG_OAUTH_SHARED_CACHE_TRANCHE);
+	if (!pg_oauth_cache_attach(&cache_view, shared_state->entries,
+							   shared_state->capacity, &shared_state->control))
+		return false;
+	attached = true;
+	return true;
+}
+
+#endif
 
 PgOAuthSharedCacheLookup
 pg_oauth_shared_cache_lookup(const void *key, size_t key_length,

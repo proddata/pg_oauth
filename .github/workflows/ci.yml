@@ -112,6 +112,63 @@ jobs:
           make clean-pg${{ matrix.package }}
           make clean
 
+  # The PAM module is a separate, opt-in artifact (ADR 0008) supported on
+  # PostgreSQL 15 to 19. Each major gets its own build tree and real-connection
+  # tests; PostgreSQL 18 and 19 also run with the native validator installed.
+  pam:
+    name: PAM module / PostgreSQL ${{ matrix.pg }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pg: "15"
+            image: postgres:15.19-bookworm@sha256:19b8449e2187e8a174b40c8832a7ed9da45813b74c2779b1c614e7e7d0ee47f0
+            both: false
+          - pg: "16"
+            image: postgres:16.15-bookworm@sha256:5264710be20f409750ac6dc4e5706dcef929c87e241605463f0f9aefa932a8d9
+            both: false
+          - pg: "17"
+            image: postgres:17.11-bookworm@sha256:665dc7b37ac52a17e298511414c21d23ffa4e6a6ef6225b3e5d59c7afb35e994
+            both: false
+          - pg: "18"
+            image: postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af
+            both: true
+          - pg: "19"
+            image: postgres:19rc1-bookworm@sha256:228dc3e5a9bd18343efeecc7ae3f52aee9b6cf3a9dca5159ece1eef254a80f06
+            both: true
+    container:
+      image: ${{ matrix.image }}
+    env:
+      # The PAM tests write a service file under /etc/pam.d and need root, so
+      # they refuse to run anywhere but an explicitly marked disposable container.
+      OAUTH_TEST_PAM_DISPOSABLE: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install build dependencies
+        run: ./scripts/ci/install-debian-dependencies.sh ${{ matrix.pg }}
+
+      - name: Install pinned PIC static Jansson dependency
+        run: ./scripts/ci/install-jansson.sh
+
+      - name: Install pinned libjwt dependency
+        run: ./scripts/ci/install-libjwt.sh
+
+      - name: Build and test the PAM module
+        run: make pam-check-pg${{ matrix.pg }}
+
+      - name: Test the native validator and PAM module together
+        if: matrix.both
+        run: make pam-both-check-pg${{ matrix.pg }}
+
+      - name: Clean build products
+        if: always()
+        run: make clean
+
   # The pinned PostgreSQL images do not ship Git, so actions/checkout falls back
   # to a source tarball there and the container jobs have no working tree. Run
   # the Git-dependent hygiene checks on the runner, which has Git and Python.
@@ -159,6 +216,11 @@ jobs:
         run: |
           scan-build --status-bugs --keep-going -o .ci-analysis \
             make verify CC=clang
+
+      - name: Run Clang static analyzer on the PAM module
+        run: |
+          scan-build --status-bugs --keep-going -o .ci-analysis \
+            make pam-module CC=clang
 
       - name: Upload static-analysis reports
         if: failure()

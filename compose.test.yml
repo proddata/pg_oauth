@@ -1,6 +1,78 @@
 name: pg-oauth-validator-test
 
 services:
+  pg15:
+    image: pg-oauth-validator-dev:pg15
+    build:
+      context: .
+      dockerfile: tools/dev/Containerfile
+      args:
+        PG_MAJOR: "15"
+        POSTGRES_IMAGE: postgres:15.19-bookworm@sha256:19b8449e2187e8a174b40c8832a7ed9da45813b74c2779b1c614e7e7d0ee47f0
+    working_dir: /workspace
+    environment:
+      BUILD_ROOT: /build
+      PG_CONFIG_PATH: /usr/lib/postgresql/15/bin/pg_config
+      PG_MAJOR: "15"
+    volumes:
+      - .:/workspace:ro
+      - pg15-build:/build
+    tmpfs:
+      - /source
+    entrypoint:
+      - /bin/sh
+      - /workspace/tools/dev/run-tests.sh
+    command:
+      - pam-check-pg15
+
+  pg16:
+    image: pg-oauth-validator-dev:pg16
+    build:
+      context: .
+      dockerfile: tools/dev/Containerfile
+      args:
+        PG_MAJOR: "16"
+        POSTGRES_IMAGE: postgres:16.15-bookworm@sha256:5264710be20f409750ac6dc4e5706dcef929c87e241605463f0f9aefa932a8d9
+    working_dir: /workspace
+    environment:
+      BUILD_ROOT: /build
+      PG_CONFIG_PATH: /usr/lib/postgresql/16/bin/pg_config
+      PG_MAJOR: "16"
+    volumes:
+      - .:/workspace:ro
+      - pg16-build:/build
+    tmpfs:
+      - /source
+    entrypoint:
+      - /bin/sh
+      - /workspace/tools/dev/run-tests.sh
+    command:
+      - pam-check-pg16
+
+  pg17:
+    image: pg-oauth-validator-dev:pg17
+    build:
+      context: .
+      dockerfile: tools/dev/Containerfile
+      args:
+        PG_MAJOR: "17"
+        POSTGRES_IMAGE: postgres:17.11-bookworm@sha256:665dc7b37ac52a17e298511414c21d23ffa4e6a6ef6225b3e5d59c7afb35e994
+    working_dir: /workspace
+    environment:
+      BUILD_ROOT: /build
+      PG_CONFIG_PATH: /usr/lib/postgresql/17/bin/pg_config
+      PG_MAJOR: "17"
+    volumes:
+      - .:/workspace:ro
+      - pg17-build:/build
+    tmpfs:
+      - /source
+    entrypoint:
+      - /bin/sh
+      - /workspace/tools/dev/run-tests.sh
+    command:
+      - pam-check-pg17
+
   pg18:
     image: pg-oauth-validator-dev:pg18
     build:
@@ -50,5 +122,8 @@ services:
       - dev-test-pg19
 
 volumes:
+  pg15-build:
+  pg16-build:
+  pg17-build:
   pg18-build:
   pg19-build:
