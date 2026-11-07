@@ -57,6 +57,28 @@ never part of `make install`, so an OAuth-only installation has no PAM module an
 no PAM dependency. Restart is not required for a first install, but replacing
 the module file affects only backends started afterwards.
 
+The per-major release archives for PostgreSQL 18 and 19 contain the module as
+`pg_oauth_pam.so` in the same PostgreSQL library directory as the validator
+(`pg_config --pkglibdir`). The place of a PAM module differs between
+distributions, and libpam accepts an absolute path, so name that path in the
+service file instead of copying the file:
+
+```conf
+auth    [success=ok default=die] /usr/lib/postgresql/18/lib/pg_oauth_pam.so  issuer=... audience=... scope=...
+account [success=ok default=die] /usr/lib/postgresql/18/lib/pg_oauth_pam.so  issuer=... audience=... scope=...
+```
+
+The archive installs both modules, so an OAuth-only host that extracts it has the
+PAM file on disk. Nothing loads it unless a PAM service names it, and the
+validator does not link libpam; delete the file to keep such a host free of it.
+The archive's module is built for one PostgreSQL major version. From PostgreSQL 17
+libpam loads it and PostgreSQL's own module check never runs, so the module
+compares the server's version with its own and denies, with a logged reason, when
+they differ. There are no archives for PostgreSQL 15 to 17: build from source
+there. The packaging evidence is the build itself (an exact-revision, reproducible
+archive) and the PAM suite run against the module extracted from it; it is not
+the RPM or SELinux evidence described above.
+
 On the PostgreSQL 18 RPM targets the module can instead be installed from the
 `postgresql18-pg_oauth_validator-pam` package, which places it at
 `%{_libdir}/security/pg_oauth_pam.so`. It does not depend on the validator

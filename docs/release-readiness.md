@@ -87,6 +87,16 @@ checks installation, normalizes archive metadata, and emits `BUILD-MANIFEST`
 and SHA-256. Inspect per-file digests, exact PostgreSQL release and full licenses;
 prove each package rejects the other major's environment.
 
+Each archive holds both modules, `pg_oauth_validator.so` and `pg_oauth_pam.so`,
+in the PostgreSQL library directory, and the manifest records the libpam versions
+the PAM module links. The staged-install check verifies the PAM module's exports,
+`-z nodelete`, absence of a private search path, embedded libjwt and Jansson, and
+libpam linkage. The validator rejects another major through its magic block; the
+PAM module, which libpam loads from PostgreSQL 17 on, does so with its own version
+check (`test_a_module_built_for_another_major_never_authenticates`). Before
+publishing, build each archive twice from the same revision and compare the
+digests, then run the PAM suite against the module extracted from the archive.
+
 Debian image digest, snapshot and exact package versions in
 `scripts/ci/install-debian-dependencies.sh` are one reviewed input set. Record
 them in the manifest; missing versions must fail rather than select newer ones.

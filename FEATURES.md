@@ -67,7 +67,9 @@ An opt-in module accepted by [`ADR 0008`](docs/adr/0008-postgresql-pam-token-aut
 and [`ADR 0009`](docs/adr/0009-pam-cache-and-module-isolation.md). It remains
 experimental: the release gate in ADR 0009 and the evidence listed in ADR 0008
 must be met before a production release, and no packaging, SELinux or
-distribution qualification beyond what those documents record is claimed. It
+distribution qualification beyond what those documents record is claimed. The
+per-major release archives for PostgreSQL 18 and 19 carry the module; on 15, 16
+and 17 it is built from source. It
 exists for clients that can send a password but cannot perform native OAuth
 authentication. It adds no token introspection or other authentication mechanism.
 
