@@ -136,7 +136,7 @@ the same defaults; time values are in milliseconds.
 
 | Argument | Required | Default | Meaning |
 | --- | --- | --- | --- |
-| `issuer` | yes | | Exact trusted issuer URL. Discovery is derived from it. |
+| `issuer` | yes | | Exact trusted issuer identifier, not the discovery URL; discovery is derived from it. See [issuer values](configuration.md#issuer-scope-and-time-claim-values). |
 | `audience` | yes | | Comma-separated accepted audiences. |
 | `scope` | yes | | Space-separated scopes the token must contain. |
 | `algorithms` | no | `RS256,ES256` | Allowed signing algorithms (`EdDSA` is opt-in). |
