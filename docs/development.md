@@ -98,6 +98,13 @@ and 19 `pam-both-check-pgNN` additionally installs the native validator and the 
 module in one cluster. CI runs the same targets. `make pam-module` builds only the
 module, and `make install-pam` installs it into the system PAM directory.
 
+`make fuzz-pam-policy` builds a libFuzzer target (Clang, ASan and UBSan) for the
+stack-argument parser. Besides memory safety it checks that an error leaves no
+usable policy and that an accepted policy is bounded and has a stable digest. It
+is part of `make fuzz-smoke`; seeds live in `tests/fuzz/pam-policy-seeds/`. Compose
+mounts `/source` without execute permission, so run it from the build volume as
+the `dev-*` targets do.
+
 Run the Compose commands from a normal clone. A Git worktree's `.git` is a pointer
 into another directory that the container cannot read, which breaks the source
 snapshot step.
