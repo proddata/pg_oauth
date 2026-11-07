@@ -108,7 +108,12 @@ def prepare(version, revision, dependencies, output):
         # The spec is a separately reviewable SRPM input. Until committed, it
         # may differ from Source0; never attribute its bytes to source_revision.
         spec = (ROOT / "packaging/rpm/pg_oauth_validator.spec.in").read_text()
-        for key, value in (("VERSION", version), ("SOURCE_REVISION", revision), ("SOURCE_DATE_EPOCH", epoch)):
+        # The PAM subpackage exists only for sources that contain the module. A
+        # retained older release is rebuilt with the current spec template, and
+        # must neither require pam-devel nor invoke targets its source lacks.
+        with_pam = "1" if git("ls-tree", "--name-only", revision, "pam/pg_oauth_pam.c").strip() else "0"
+        for key, value in (("VERSION", version), ("SOURCE_REVISION", revision), ("SOURCE_DATE_EPOCH", epoch),
+                           ("WITH_PAM", with_pam)):
             spec = spec.replace(f"@{key}@", value)
         (spec_dir / "pg_oauth_validator.spec").write_text(spec)
         spec_digest = hashlib.sha256(spec.encode()).hexdigest()

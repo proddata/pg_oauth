@@ -61,6 +61,44 @@ The direct libcurl, OpenSSL and PostgreSQL releases remain as listed above.
 The lock is accepted for reproducibility/lifecycle testing, **not production
 approval**. Rocky's OpenSSL finding has the scoped deployment exception below.
 
+## Builder recapture for the PAM subpackage, 2026-11-07
+
+The optional PAM subpackage needs `pam-devel` at build time, which the frozen
+builders above do not contain, and offline builds cannot install it. All six
+builders were therefore captured again, unchanged except for that dependency, by
+workflow run
+[42306639206](https://github.com/proddata/pg_oauth_validator/actions/runs/42306639206).
+The capture installer, scripts and workflow are byte-identical to the checked-in
+versions at the pull request head that was captured. The lock SHA-256 is
+`46ef0d5abcb83a68432e89e46f1afd550fab7a1b9d6b4e3dfac424b24181a106`. The
+`packages.tsv`, `tools.txt` and `image.json` records of all six targets were
+downloaded and checked against that lock's digests, and the six base images are
+unchanged.
+
+Compared with the lock above:
+
+- `pam-devel` is added on all six targets, at the same release as the installed
+  `pam-libs` on each (Fedora 43 `1.7.1-5`, Fedora 44 `1.7.2-2`, Rocky 10
+  `1.6.1-9.el10_2.1`).
+- The direct runtime packages in the tables above are **unchanged** on every
+  target: libcurl (or libcurl-minimal), OpenSSL, PostgreSQL, glibc and libevent.
+  The scope of the Rocky OpenSSL exception below is therefore unchanged: the same
+  `1:3.5.8-2.el10_2` packages and the same expiry.
+- Because a fresh capture installs current repository content, other inherited
+  packages moved to newer releases, about 20 to 40 per target. They include
+  `ca-certificates` (Fedora 44 `-1` to `-2`; Rocky `2025.2.80_v9.0.305-102.el10`
+  to `2026.2.92_v9.0.319-100.3.el10_2`), the Fedora 44 and Rocky compiler
+  toolchains, `python3` on Fedora 44, `openssh`, `util-linux` and `brotli`. The
+  per-target lists are in the retained review records of that run.
+
+Only the package inventories were compared. The advisories and changelogs of the
+updated packages were **not** reviewed, and the full-closure disposition above has
+not been repeated for this inventory. The maintainer approved the lock for
+reproducibility and lifecycle testing in the repository work session; this is not
+independent review and not production approval. The previous captures stay
+available through the earlier run and Git history. The RPM subpackage itself is
+introduced separately and is not qualified under SELinux enforcing mode.
+
 ## Embedded libraries and licensing
 
 The source pins are unchanged from v0.1.2:
