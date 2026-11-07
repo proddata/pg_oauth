@@ -105,7 +105,7 @@ is part of `make fuzz-smoke`; seeds live in `tests/fuzz/pam-policy-seeds/`. Comp
 mounts `/source` without execute permission, so run it from the build volume as
 the `dev-*` targets do.
 
-Three more libFuzzer targets are part of `make fuzz-smoke`, each with an oracle
+Four more libFuzzer targets are part of `make fuzz-smoke`, each with an oracle
 that does not depend on the code under test:
 
 - `make fuzz-claims` runs every input under three policies (default, delegated
@@ -122,6 +122,15 @@ that does not depend on the code under test:
   signature that verifies must have been computed over exactly the original
   signing input, which also covers algorithm confusion. Seeds are in
   `tests/fuzz/signature-seeds/`.
+
+- `make fuzz-http-freshness` feeds the Cache-Control, Date, Expires and Age
+  header values (any of them absent or empty) and the response time to the
+  freshness calculation, which decides how long fetched provider keys are
+  trusted. Each result is compared with a strict run (minimum lifetime zero) of
+  the same input: the minimum may only fill a zero lifetime or cap a `no-store`
+  one, never changes a revalidation requirement or a positive cacheable
+  lifetime, and in strict mode an added Age header or a later response time can
+  never lengthen freshness. Seeds are in `tests/fuzz/http-freshness-seeds/`.
 
 The signing helpers shared with `tests/signature_test.c` are in
 `tests/signing_support.h`.
