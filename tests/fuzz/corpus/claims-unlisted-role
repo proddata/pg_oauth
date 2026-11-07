@@ -1,0 +1,1 @@
+{"iss":"https://issuer.example/","aud":"postgres://primary","exp":1100,"sub":"principal","roles":["other","app_reader"],"scope":"connect:postgres read:metadata"}

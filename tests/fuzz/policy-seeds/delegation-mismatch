@@ -1,0 +1,8 @@
+https://idp.example/
+connect:postgres
+
+postgres://primary
+RS256,ES256
+at+jwt,application/at+jwt
+sub
+roles

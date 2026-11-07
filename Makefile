@@ -54,6 +54,8 @@ JWKS_FUZZ_BIN = tests/fuzz/jwks_fuzz
 CLAIMS_FUZZ_BIN = tests/fuzz/claims_fuzz
 IDENTITY_FUZZ_BIN = tests/fuzz/identity_fuzz
 PAM_POLICY_FUZZ_BIN = tests/fuzz/pam_policy_fuzz
+POLICY_FUZZ_BIN = tests/fuzz/policy_fuzz
+SIGNATURE_FUZZ_BIN = tests/fuzz/signature_fuzz
 METADATA_FUZZ_BIN = tests/fuzz/metadata_fuzz
 LIBJWT_FUZZ_CORPUS = .fuzz-corpus
 JWT_ENVELOPE_FUZZ_CORPUS = .jwt-envelope-fuzz-corpus
@@ -61,6 +63,8 @@ JWKS_FUZZ_CORPUS = .jwks-fuzz-corpus
 CLAIMS_FUZZ_CORPUS = .claims-fuzz-corpus
 IDENTITY_FUZZ_CORPUS = .identity-fuzz-corpus
 PAM_POLICY_FUZZ_CORPUS = .pam-policy-fuzz-corpus
+POLICY_FUZZ_CORPUS = .policy-fuzz-corpus
+SIGNATURE_FUZZ_CORPUS = .signature-fuzz-corpus
 METADATA_FUZZ_CORPUS = .metadata-fuzz-corpus
 SOURCE_DIR := $(abspath $(dir $(firstword $(MAKEFILE_LIST))))
 BUILD_ROOT ?= $(SOURCE_DIR)/build
@@ -88,11 +92,12 @@ EXTRA_CLEAN = $(TEST_BIN) $(POLICY_TEST_BIN) $(JWT_ENVELOPE_TEST_BIN) \
 	$(HTTP_FRESHNESS_TEST_BIN) \
 	$(OAUTH_TEST_CLIENT) $(CACHE_PROBE) $(LIBJWT_SPIKE_BIN) $(LIBJWT_FUZZ_BIN) \
 	$(JWT_ENVELOPE_FUZZ_BIN) $(JWKS_FUZZ_BIN) $(CLAIMS_FUZZ_BIN) \
-	$(IDENTITY_FUZZ_BIN) $(PAM_POLICY_FUZZ_BIN) \
+	$(IDENTITY_FUZZ_BIN) $(PAM_POLICY_FUZZ_BIN) $(POLICY_FUZZ_BIN) $(SIGNATURE_FUZZ_BIN) \
 	$(METADATA_FUZZ_BIN) \
 	.pytest_cache .pycache \
 	$(LIBJWT_FUZZ_CORPUS) $(JWT_ENVELOPE_FUZZ_CORPUS) \
 	$(JWKS_FUZZ_CORPUS) $(CLAIMS_FUZZ_CORPUS) $(IDENTITY_FUZZ_CORPUS) $(PAM_POLICY_FUZZ_CORPUS) \
+	$(POLICY_FUZZ_CORPUS) $(SIGNATURE_FUZZ_CORPUS) \
 	$(METADATA_FUZZ_CORPUS) \
 	$(PAM_MODULE) $(PAM_CREDENTIAL_TEST_BIN) $(PAM_POLICY_TEST_BIN) $(PAM_TRANSACTION_TEST_BIN) \
 	.ci-analysis \
@@ -131,7 +136,7 @@ include $(PGXS)
 	check-pg-version check-policy check-static-link-dependencies \
 	check-libjwt-spike check-libjwt-version check-symbols clean-pg18 clean-pg19 \
 	dependency-spike fuzz-claims fuzz-identity fuzz-pam-policy fuzz-jwks fuzz-jwt-envelope \
-	fuzz-metadata \
+	fuzz-metadata fuzz-policy fuzz-signature \
 	fuzz-libjwt-spike \
 	integrationcheck \
 	installedcheck packagecheck \
@@ -177,7 +182,7 @@ sanitizercheck:
 
 fuzz-smoke:
 	$(MAKE) fuzz-libjwt-spike fuzz-jwt-envelope fuzz-jwks fuzz-claims \
-		fuzz-identity fuzz-pam-policy fuzz-metadata
+		fuzz-identity fuzz-pam-policy fuzz-metadata fuzz-policy fuzz-signature
 
 # Prevent compilation from starting with incompatible server headers.
 $(OBJS): | check-pg-version
@@ -416,7 +421,7 @@ $(JWKS_TEST_BIN): tests/jwks_test.c src/jwks.c src/base64url.c
 check-jwks: $(JWKS_TEST_BIN)
 	./$(JWKS_TEST_BIN)
 
-$(SIGNATURE_TEST_BIN): tests/signature_test.c src/signature.c src/jwks.c \
+$(SIGNATURE_TEST_BIN): tests/signature_test.c tests/signing_support.h src/signature.c src/jwks.c \
 	src/jwt_envelope.c src/base64url.c src/claims.c src/identity.c \
 	check-libjwt-version
 	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow \
@@ -474,6 +479,30 @@ fuzz-pam-policy: $(PAM_POLICY_FUZZ_BIN)
 	@mkdir -p "$(PAM_POLICY_FUZZ_CORPUS)"
 	@cp "$(srcdir)"/tests/fuzz/pam-policy-seeds/* "$(PAM_POLICY_FUZZ_CORPUS)/"
 	./$(PAM_POLICY_FUZZ_BIN) -runs=20000 -max_len=16384 "$(PAM_POLICY_FUZZ_CORPUS)"
+
+$(POLICY_FUZZ_BIN): tests/fuzz/policy_fuzz.c src/policy.c src/validator_policy.c
+	clang -std=gnu17 -Wall -Wextra -Werror -Wshadow \
+		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
+		$(PG_CPPFLAGS) -isystem $(includedir_server) -I$(srcdir)/src \
+		-o $@ $(filter %.c,$^)
+
+fuzz-policy: $(POLICY_FUZZ_BIN)
+	@mkdir -p "$(POLICY_FUZZ_CORPUS)"
+	@cp "$(srcdir)"/tests/fuzz/policy-seeds/* "$(POLICY_FUZZ_CORPUS)/"
+	./$(POLICY_FUZZ_BIN) -runs=20000 -max_len=4096 "$(POLICY_FUZZ_CORPUS)"
+
+$(SIGNATURE_FUZZ_BIN): tests/fuzz/signature_fuzz.c tests/signing_support.h \
+	src/signature.c src/jwks.c src/jwt_envelope.c src/base64url.c \
+	src/claims.c src/identity.c check-libjwt-version
+	clang -std=c17 -Wall -Wextra -Werror -Wshadow \
+		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
+		-I$(srcdir)/src $$(pkg-config --cflags jansson libjwt openssl) -o $@ \
+		$(filter %.c,$^) $$(pkg-config --libs jansson libjwt openssl)
+
+fuzz-signature: $(SIGNATURE_FUZZ_BIN)
+	@mkdir -p "$(SIGNATURE_FUZZ_CORPUS)"
+	@cp "$(srcdir)"/tests/fuzz/signature-seeds/* "$(SIGNATURE_FUZZ_CORPUS)/"
+	./$(SIGNATURE_FUZZ_BIN) -runs=3000 -max_len=256 "$(SIGNATURE_FUZZ_CORPUS)"
 
 $(METADATA_TEST_BIN): tests/metadata_test.c src/metadata.c
 	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow \

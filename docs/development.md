@@ -105,6 +105,27 @@ is part of `make fuzz-smoke`; seeds live in `tests/fuzz/pam-policy-seeds/`. Comp
 mounts `/source` without execute permission, so run it from the build volume as
 the `dev-*` targets do.
 
+Three more libFuzzer targets are part of `make fuzz-smoke`, each with an oracle
+that does not depend on the code under test:
+
+- `make fuzz-claims` runs every input under three policies (default, delegated
+  roles, custom identity claim). An accepted result must have a nonempty,
+  bounded identity that passes the shared text rule, and with delegation the
+  requested role must really be listed in the claim.
+- `make fuzz-policy` builds a validation policy from fuzzed GUC and HBA values
+  (numeric settings come from a table of boundary values) and derives the
+  metadata URL from the issuer. An error must leave a zeroed policy, an accepted
+  policy must be complete and bounded, and a scope list of only `openid` must
+  never be accepted. Seeds are in `tests/fuzz/policy-seeds/`.
+- `make fuzz-signature` verifies mutated tokens against real RS256, ES256 and
+  Ed25519 keys (generated at start-up; the unmodified tokens must verify). A
+  signature that verifies must have been computed over exactly the original
+  signing input, which also covers algorithm confusion. Seeds are in
+  `tests/fuzz/signature-seeds/`.
+
+The signing helpers shared with `tests/signature_test.c` are in
+`tests/signing_support.h`.
+
 Run the Compose commands from a normal clone. A Git worktree's `.git` is a pointer
 into another directory that the container cannot read, which breaks the source
 snapshot step.
