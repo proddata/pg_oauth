@@ -171,8 +171,10 @@ resized per service; its mechanism is defined by the cache design. Linux-PAM
 1.5.2 was tested: backslash continuation works; a value with spaces needs the
 whole argument in brackets (`[name=a b]`); and configuration lines are read into
 a fixed buffer, so a line over about 1 KiB fails closed instead of reaching the
-module with arguments dropped. Operators must keep each module line short; other
-Linux-PAM versions and distribution builds still need qualification.
+module with arguments dropped. Operators must keep each module line short. The
+same behavior was then observed with Linux-PAM 1.6.1, 1.7.1 and 1.7.2 through the
+distribution RPM jobs; builds not exercised there (for example other
+distributions or Enterprise Linux 9) still need qualification.
 
 ### Limits and diagnostics
 

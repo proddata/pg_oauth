@@ -26,7 +26,8 @@ release gate in ADR 0009.
 Build a separate module for each PostgreSQL major version. PostgreSQL 15 to 19
 are built and tested. The module has been exercised on Linux in disposable
 containers. For PostgreSQL 18 an independent RPM subpackage is built and tested
-on Fedora 43, Fedora 44 and Rocky Linux 10 (see [RPM platforms](rpm-platforms.md));
+on Fedora 43, Fedora 44 and Rocky Linux 10, on x86-64 and arm64, with each
+distribution's own Linux-PAM (see [RPM platforms](rpm-platforms.md));
 no other distribution package exists. SELinux enforcing mode is qualified only
 for the Fedora 44 x86-64 RPM in the VM gate, with the optional HTTP-port policy
 (see [SELinux](#selinux)); Rocky Linux 10 and Fedora 43 are not in that gate.
@@ -99,8 +100,10 @@ account [success=ok default=die] pg_oauth_pam.so issuer=https://idp.example/ \
 - Linux-PAM reads each configuration line (after backslash continuations are
   joined) into a fixed buffer. In testing with Linux-PAM 1.5.2 a 900-byte line
   worked and a line over 1500 bytes made authentication fail closed, never
-  succeed with arguments dropped. Keep each module line well under 1 KiB; use
-  fewer, shorter audiences and scopes if you reach the limit.
+  succeed with arguments dropped. The same cases pass against Linux-PAM 1.6.1
+  (Rocky Linux 10), 1.7.1 (Fedora 43) and 1.7.2 (Fedora 44). The exact limit may
+  differ by version, so keep each module line well under 1 KiB; use fewer,
+  shorter audiences and scopes if you reach the limit.
 
 **3. `postgresql.conf`** sets the one module-level option:
 
