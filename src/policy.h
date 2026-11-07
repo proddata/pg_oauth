@@ -34,6 +34,7 @@ typedef struct PgOAuthPolicyConfig
 	int			metadata_default_ttl_ms;
 	int			jwks_default_ttl_ms;
 	int			cache_max_ttl_ms;
+	int			cache_min_ttl_ms;
 	int			jwks_stale_grace_ms;
 	int			unknown_kid_refresh_cooldown_ms;
 	int			refresh_wait_timeout_ms;
@@ -58,6 +59,7 @@ typedef struct PgOAuthValidationPolicy
 	int			metadata_default_ttl_ms;
 	int			jwks_default_ttl_ms;
 	int			cache_max_ttl_ms;
+	int			cache_min_ttl_ms;
 	int			jwks_stale_grace_ms;
 	int			unknown_kid_refresh_cooldown_ms;
 	int			refresh_wait_timeout_ms;

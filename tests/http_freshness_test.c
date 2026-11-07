@@ -17,7 +17,7 @@ static PgOAuthHttpFreshness
 calculate(const char *cache_control, const char *date, const char *expires,
 		  const char *age)
 {
-	PgOAuthHttpFreshnessPolicy policy = {300000, 3600000};
+	PgOAuthHttpFreshnessPolicy policy = {300000, 3600000, 0};
 	PgOAuthHttpFreshness result;
 
 	if (pg_oauth_http_freshness_calculate(cache_control, date, expires, age,
@@ -47,7 +47,7 @@ int
 main(void)
 {
 	PgOAuthHttpFreshness result;
-	PgOAuthHttpFreshnessPolicy bad_policy = {2000, 1000};
+	PgOAuthHttpFreshnessPolicy bad_policy = {2000, 1000, 0};
 
 	result = calculate(NULL, NULL, NULL, NULL);
 	if (result.ttl_ms != 300000 || result.explicit_freshness ||
@@ -161,6 +161,59 @@ main(void)
 	result = calculate(NULL, "invalid-date", "also-invalid", NULL);
 	if (result.ttl_ms != 0 || !result.explicit_freshness)
 		fail("malformed HTTP dates were treated as fresh");
+
+	/*
+	 * Minimum retention: responses that would be refetched on every login are
+	 * kept for the floor, but a positive provider lifetime is never raised.
+	 */
+	{
+		PgOAuthHttpFreshnessPolicy floor_policy = {300000, 3600000, 30000};
+		PgOAuthHttpFreshness floored;
+		PgOAuthHttpFreshnessPolicy invalid_floor = {300000, 3600000, 3600001};
+		PgOAuthHttpFreshnessPolicy negative_floor = {300000, 3600000, -1};
+
+#define FLOORED(cc, exp, age) \
+	(pg_oauth_http_freshness_calculate(cc, NULL, exp, age, RESPONSE_TIME, \
+									   &floor_policy, &floored) == PG_OAUTH_HTTP_FRESHNESS_OK)
+
+		if (!FLOORED("no-store, max-age=60", NULL, NULL) ||
+			!floored.cacheable || floored.ttl_ms != 30000)
+			fail("no-store was not retained for the minimum only");
+		if (!FLOORED("no-store", NULL, NULL) || !floored.cacheable ||
+			floored.ttl_ms != 30000)
+			fail("no-store without freshness was retained longer than the minimum");
+		if (!FLOORED("no-store, max-age=10", NULL, NULL) ||
+			!floored.cacheable || floored.ttl_ms != 10000)
+			fail("a shorter no-store lifetime was raised to the minimum");
+		if (!FLOORED("no-cache", NULL, NULL) || !floored.cacheable ||
+			floored.ttl_ms != 30000 || !floored.revalidation_required)
+			fail("no-cache was not retained for the minimum with revalidation");
+		if (!FLOORED("max-age=0", NULL, NULL) || floored.ttl_ms != 30000)
+			fail("max-age=0 was not retained for the minimum");
+		if (!FLOORED("max-age=1, max-age=2", NULL, NULL) ||
+			floored.ttl_ms != 30000 || !floored.revalidation_required)
+			fail("unusable freshness was not retained for the minimum");
+		if (!FLOORED(NULL, "0", NULL) || floored.ttl_ms != 30000)
+			fail("an invalid Expires was not retained for the minimum");
+		if (!FLOORED("max-age=5", NULL, NULL) || floored.ttl_ms != 5000)
+			fail("a positive provider lifetime was raised to the minimum");
+		if (!FLOORED("max-age=120", NULL, NULL) || floored.ttl_ms != 120000)
+			fail("a longer provider lifetime was altered by the minimum");
+		if (!FLOORED(NULL, NULL, NULL) || floored.ttl_ms != 300000 ||
+			floored.explicit_freshness)
+			fail("the default lifetime was altered by the minimum");
+		if (!FLOORED("max-age=60", NULL, "60") || floored.ttl_ms != 30000)
+			fail("an Age-exhausted lifetime was not retained for the minimum");
+		if (pg_oauth_http_freshness_calculate(NULL, NULL, NULL, NULL,
+											  RESPONSE_TIME, &invalid_floor, &floored) !=
+			PG_OAUTH_HTTP_FRESHNESS_INVALID_ARGUMENT ||
+			pg_oauth_http_freshness_calculate(NULL, NULL, NULL, NULL,
+											  RESPONSE_TIME, &negative_floor, &floored) !=
+			PG_OAUTH_HTTP_FRESHNESS_INVALID_ARGUMENT)
+			fail("an out-of-range minimum was accepted");
+#undef FLOORED
+	}
+
 	if (pg_oauth_http_freshness_calculate(NULL, NULL, NULL, NULL,
 										  RESPONSE_TIME, &bad_policy, &result) !=
 		PG_OAUTH_HTTP_FRESHNESS_INVALID_ARGUMENT)

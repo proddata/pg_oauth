@@ -1,5 +1,7 @@
 #include "postgres.h"
 
+#include <time.h>
+
 #include <string.h>
 
 #include "storage/condition_variable.h"
@@ -298,11 +300,31 @@ pg_oauth_shared_cache_complete_refresh(const PgOAuthCacheRefresh *refresh,
 	return result;
 }
 
+/*
+ * Monotonic milliseconds for wait accounting. PostgreSQL's instr_time helpers
+ * are not usable from a module on every platform (PostgreSQL 19 on x86), and
+ * validation already uses CLOCK_MONOTONIC for cache time.
+ */
+static bool
+wait_clock_ms(int64_t *value)
+{
+	struct timespec now;
+
+	if (clock_gettime(CLOCK_MONOTONIC, &now) != 0 || now.tv_sec < 0 ||
+		now.tv_sec > INT64_MAX / 1000)
+		return false;
+	*value = (int64_t) now.tv_sec * 1000 + now.tv_nsec / 1000000;
+	return true;
+}
+
 bool
 pg_oauth_shared_cache_wait_refresh(const void *key, size_t key_length,
 								   int64_t timeout_ms, int64_t *elapsed_ms)
 {
 	bool		refreshing;
+	bool		have_clock;
+	int64_t		started_ms = 0;
+	int64_t		waited_ms = 0;
 
 	if (elapsed_ms != NULL)
 		*elapsed_ms = 0;
@@ -311,28 +333,62 @@ pg_oauth_shared_cache_wait_refresh(const void *key, size_t key_length,
 		timeout_ms > 5000 || elapsed_ms == NULL)
 		return false;
 
+	have_clock = wait_clock_ms(&started_ms);
 	ConditionVariablePrepareToSleep(&shared_state->refresh_cv);
-	LWLockAcquire(&shared_state->lock, LW_SHARED);
-	refreshing = pg_oauth_cache_is_refreshing(&cache_view, key, key_length);
-	LWLockRelease(&shared_state->lock);
-	if (!refreshing)
+	for (;;)
 	{
-		ConditionVariableCancelSleep();
-		return true;
+		LWLockAcquire(&shared_state->lock, LW_SHARED);
+		refreshing = pg_oauth_cache_is_refreshing(&cache_view, key, key_length);
+		LWLockRelease(&shared_state->lock);
+		if (!refreshing)
+			break;
+
+		/*
+		 * Every completed refresh wakes every waiter, including those for
+		 * other entries, so a wakeup proves nothing about this entry: check
+		 * it again and keep sleeping until this wait's own deadline. Without
+		 * a clock fall back to one full-length wait, which fails closed.
+		 */
+		if (have_clock)
+		{
+			int64_t		now_ms;
+
+			if (!wait_clock_ms(&now_ms) || now_ms < started_ms)
+				have_clock = false;
+			else
+				waited_ms = now_ms - started_ms;
+		}
+		if (have_clock && waited_ms >= timeout_ms)
+			break;
+		(void) ConditionVariableTimedSleep(&shared_state->refresh_cv,
+										   (long) (have_clock ? timeout_ms - waited_ms : timeout_ms),
+										   PG_WAIT_EXTENSION);
+		if (!have_clock)
+		{
+			LWLockAcquire(&shared_state->lock, LW_SHARED);
+			refreshing = pg_oauth_cache_is_refreshing(&cache_view, key, key_length);
+			LWLockRelease(&shared_state->lock);
+			break;
+		}
 	}
+	ConditionVariableCancelSleep();
 
 	/*
-	 * Use one bounded wait. PostgreSQL 19's x86 instr_time conversion reaches
-	 * backend timing globals that are not exported to validator modules.
-	 * Rechecking after wakeup is sufficient: a spurious wakeup fails closed.
+	 * Callers add this to their cache clock. Measure it once, after the last
+	 * sleep; without a trustworthy clock assume the whole timeout passed.
 	 */
-	(void) ConditionVariableTimedSleep(&shared_state->refresh_cv, (long) timeout_ms,
-									   PG_WAIT_EXTENSION);
-	LWLockAcquire(&shared_state->lock, LW_SHARED);
-	refreshing = pg_oauth_cache_is_refreshing(&cache_view, key, key_length);
-	LWLockRelease(&shared_state->lock);
-	ConditionVariableCancelSleep();
-	*elapsed_ms = timeout_ms;
+	if (have_clock)
+	{
+		int64_t		now_ms;
+
+		if (wait_clock_ms(&now_ms) && now_ms >= started_ms)
+			waited_ms = now_ms - started_ms;
+		else
+			waited_ms = timeout_ms;
+	}
+	else
+		waited_ms = timeout_ms;
+	*elapsed_ms = waited_ms > timeout_ms ? timeout_ms : waited_ms;
 	return !refreshing;
 }
 

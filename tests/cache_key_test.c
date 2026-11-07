@@ -39,6 +39,7 @@ policy(void)
 		.metadata_default_ttl_ms = 300000,
 		.jwks_default_ttl_ms = 300000,
 		.cache_max_ttl_ms = 3600000,
+		.cache_min_ttl_ms = 30000,
 		.unknown_kid_refresh_cooldown_ms = 30000,
 		.allow_insecure_http = false,
 	};
@@ -113,6 +114,7 @@ main(void)
 	CHECK_NUMBER(metadata_default_ttl_ms);
 	CHECK_NUMBER(jwks_default_ttl_ms);
 	CHECK_NUMBER(cache_max_ttl_ms);
+	CHECK_NUMBER(cache_min_ttl_ms);
 	CHECK_NUMBER(unknown_kid_refresh_cooldown_ms);
 	value = policy();
 	value.allow_insecure_http = true;

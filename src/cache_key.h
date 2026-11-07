@@ -48,6 +48,7 @@ typedef struct PgOAuthCacheKeyPolicy
 	uint64_t	metadata_default_ttl_ms;
 	uint64_t	jwks_default_ttl_ms;
 	uint64_t	cache_max_ttl_ms;
+	uint64_t	cache_min_ttl_ms;
 	uint64_t	unknown_kid_refresh_cooldown_ms;
 	bool		allow_insecure_http;
 } PgOAuthCacheKeyPolicy;

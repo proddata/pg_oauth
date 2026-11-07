@@ -21,6 +21,7 @@ static int	oauth_max_token_size;
 static int	oauth_metadata_default_ttl_ms;
 static int	oauth_jwks_default_ttl_ms;
 static int	oauth_cache_max_ttl_ms;
+static int	oauth_cache_min_ttl_ms;
 static int	oauth_jwks_stale_grace_ms;
 static int	oauth_unknown_kid_refresh_cooldown_ms;
 static int	oauth_refresh_wait_timeout_ms;
@@ -107,6 +108,11 @@ _PG_init(void)
 							"Maximum freshness lifetime accepted from provider cache headers.", NULL,
 							&oauth_cache_max_ttl_ms, 3600000, 1000, 86400000,
 							PGC_SIGHUP, GUC_UNIT_MS, NULL, NULL, NULL);
+	DefineCustomIntVariable("pg_oauth_validator.cache_min_ttl",
+							"Minimum retention of metadata and JWKS responses whose cache headers would force a refetch on every authentication.",
+							"Applies to no-store, no-cache, max-age=0 and unusable headers; a positive provider lifetime is never raised. Zero disables it.",
+							&oauth_cache_min_ttl_ms, 30000, 0, 300000,
+							PGC_SIGHUP, GUC_UNIT_MS, NULL, NULL, NULL);
 	DefineCustomIntVariable("pg_oauth_validator.jwks_stale_grace",
 							"Explicit grace for stale JWKS use during provider failure.",
 							"Zero preserves fail-closed behavior after freshness expires.",
@@ -149,6 +155,7 @@ pg_oauth_config_snapshot(PgOAuthPolicyConfig *config)
 	config->metadata_default_ttl_ms = oauth_metadata_default_ttl_ms;
 	config->jwks_default_ttl_ms = oauth_jwks_default_ttl_ms;
 	config->cache_max_ttl_ms = oauth_cache_max_ttl_ms;
+	config->cache_min_ttl_ms = oauth_cache_min_ttl_ms;
 	config->jwks_stale_grace_ms = oauth_jwks_stale_grace_ms;
 	config->unknown_kid_refresh_cooldown_ms = oauth_unknown_kid_refresh_cooldown_ms;
 	config->refresh_wait_timeout_ms = oauth_refresh_wait_timeout_ms;

@@ -127,17 +127,20 @@ pg_oauth_cache_policy_assemble(const PgOAuthValidationPolicy *policy,
 			.metadata_default_ttl_ms = (uint64) policy->metadata_default_ttl_ms,
 			.jwks_default_ttl_ms = (uint64) policy->jwks_default_ttl_ms,
 			.cache_max_ttl_ms = (uint64) policy->cache_max_ttl_ms,
+			.cache_min_ttl_ms = (uint64) policy->cache_min_ttl_ms,
 			.unknown_kid_refresh_cooldown_ms =
 			(uint64) policy->unknown_kid_refresh_cooldown_ms,
 			.allow_insecure_http = policy->allow_insecure_http,
 	};
 	out->metadata_freshness = (PgOAuthHttpFreshnessPolicy)
 	{
-		policy->metadata_default_ttl_ms, policy->cache_max_ttl_ms
+		policy->metadata_default_ttl_ms, policy->cache_max_ttl_ms,
+			policy->cache_min_ttl_ms
 	};
 	out->jwks_freshness = (PgOAuthHttpFreshnessPolicy)
 	{
-		policy->jwks_default_ttl_ms, policy->cache_max_ttl_ms
+		policy->jwks_default_ttl_ms, policy->cache_max_ttl_ms,
+			policy->cache_min_ttl_ms
 	};
 	out->jwks_stale_grace_ms = policy->jwks_stale_grace_ms;
 	out->unknown_kid_refresh_cooldown_ms = policy->unknown_kid_refresh_cooldown_ms;

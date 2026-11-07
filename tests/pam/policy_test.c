@@ -75,7 +75,7 @@ main(void)
 				  "issuer=https://idp.example/", "token_types=at+jwt", "allow_missing_token_type=on",
 				  "identity_claim=email", "clock_skew_ms=300000", "max_token_size=65530",
 				  "jwks_hosts=keys.example", "ca_file=/etc/ssl/ca.pem",
-				  "metadata_default_ttl_ms=1000", "jwks_default_ttl_ms=1000", "cache_max_ttl_ms=1000",
+				  "metadata_default_ttl_ms=1000", "jwks_default_ttl_ms=1000", "cache_max_ttl_ms=1000", "cache_min_ttl_ms=1000",
 				  "jwks_stale_grace_ms=0", "unknown_kid_refresh_cooldown_ms=1000",
 				  "refresh_wait_timeout_ms=0", "allow_insecure_http=off") == PG_OAUTH_PAM_POLICY_OK);
 	require(p.validation.max_token_size == 65530 && p.validation.allow_missing_token_type);
@@ -106,6 +106,15 @@ main(void)
 	denied(PARSE(&p, REQUIRED, "max_token_size=65531"), PG_OAUTH_PAM_POLICY_TOKEN_SIZE_TOO_LARGE, &p);
 	denied(PARSE(&p, REQUIRED, "max_token_size=65536"), PG_OAUTH_PAM_POLICY_TOKEN_SIZE_TOO_LARGE, &p);
 	denied(PARSE(&p, REQUIRED, "max_token_size=65537"), PG_OAUTH_PAM_POLICY_INVALID_POLICY, &p);
+
+	/* Minimum cache retention: default 30 s, 0 disables, at most 5 min. */
+	require(PARSE(&p, REQUIRED) == PG_OAUTH_PAM_POLICY_OK &&
+			p.validation.cache_min_ttl_ms == 30000);
+	require(PARSE(&p, REQUIRED, "cache_min_ttl_ms=0") == PG_OAUTH_PAM_POLICY_OK &&
+			p.validation.cache_min_ttl_ms == 0);
+	require(PARSE(&p, REQUIRED, "cache_min_ttl_ms=300000") == PG_OAUTH_PAM_POLICY_OK);
+	denied(PARSE(&p, REQUIRED, "cache_min_ttl_ms=300001"), PG_OAUTH_PAM_POLICY_INVALID_POLICY, &p);
+	denied(PARSE(&p, REQUIRED, "cache_min_ttl_ms=-1"), PG_OAUTH_PAM_POLICY_INVALID_NUMBER, &p);
 
 	/* Missing required arguments (never defaulted). */
 	denied(PARSE(&p, "audience=postgres://primary", "scope=a"), PG_OAUTH_PAM_POLICY_INVALID_POLICY, &p);

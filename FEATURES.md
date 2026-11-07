@@ -206,7 +206,9 @@ than use `all` or a broad `+group` unless that wider authority is intentional.
 - Metadata `issuer` must exactly equal the configured issuer.
 - URL schemes, redirects, response sizes, timeouts, and allowed hosts are restricted by policy.
 - Cache entries are separated by exact URL, issuer, and complete validation policy.
-- Unknown signing keys may trigger at most one controlled refresh, subject to per-issuer rate limiting.
+- Unknown signing keys may trigger at most one controlled refresh, subject to a cooldown on the exact cache entry. An entry is keyed by issuer, URLs and complete validation policy, so the entries for one issuer differ only by administrator-defined policy and their number is bounded by configuration.
+- A well-formed key set that cannot serve a token's key is still published; only that token is denied.
+- Responses that would otherwise be fetched on every authentication (`no-store`, `no-cache`, `max-age=0`, unusable freshness headers) are retained for a short administrator-set minimum, `cache_min_ttl` (default 30 s, at most 5 minutes). Zero restores per-authentication fetching. A positive provider lifetime is never extended, and nothing retained this way is used stale.
 - When another backend is already refreshing the same cold cache entry,
   authentication waits for bounded publication by default and then retries the
   shared cache. The wait can be set to zero for immediate fail-closed behavior.

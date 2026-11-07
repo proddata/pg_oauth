@@ -31,6 +31,7 @@ valid_config(void)
 		.metadata_default_ttl_ms = 300000,
 		.jwks_default_ttl_ms = 300000,
 		.cache_max_ttl_ms = 3600000,
+		.cache_min_ttl_ms = 30000,
 		.jwks_stale_grace_ms = 0,
 		.unknown_kid_refresh_cooldown_ms = 30000,
 		.refresh_wait_timeout_ms = 5000,
@@ -208,6 +209,10 @@ main(void)
 					   "maximum TTL shorter than a fallback was accepted");
 	EXPECT_CACHE_ERROR(cache_max_ttl_ms, 86400001,
 					   "oversized cache maximum TTL was accepted");
+	EXPECT_CACHE_ERROR(cache_min_ttl_ms, -1,
+					   "negative minimum cache retention was accepted");
+	EXPECT_CACHE_ERROR(cache_min_ttl_ms, 300001,
+					   "oversized minimum cache retention was accepted");
 	EXPECT_CACHE_ERROR(jwks_stale_grace_ms, -1,
 					   "negative JWKS stale grace was accepted");
 	EXPECT_CACHE_ERROR(jwks_stale_grace_ms, 3600001,
@@ -226,10 +231,30 @@ main(void)
 	config.metadata_default_ttl_ms = 1000;
 	config.jwks_default_ttl_ms = 1000;
 	config.cache_max_ttl_ms = 1000;
+	config.cache_min_ttl_ms = 1000;
 	config.jwks_stale_grace_ms = 3600000;
 	config.unknown_kid_refresh_cooldown_ms = 1000;
 	if (pg_oauth_policy_build(&config, &hba, &policy) != PG_OAUTH_POLICY_OK)
 		fail("valid lower and upper cache-policy boundaries were rejected");
+
+	/* The minimum retention may be disabled, or as long as the maximum. */
+	config = valid_config();
+	config.cache_min_ttl_ms = 0;
+	if (pg_oauth_policy_build(&config, &hba, &policy) != PG_OAUTH_POLICY_OK ||
+		policy.cache_min_ttl_ms != 0)
+		fail("disabled minimum cache retention was rejected");
+	config.cache_min_ttl_ms = 300000;
+	if (pg_oauth_policy_build(&config, &hba, &policy) != PG_OAUTH_POLICY_OK ||
+		policy.cache_min_ttl_ms != 300000)
+		fail("maximum minimum cache retention was rejected");
+	/* ...but never longer than the maximum lifetime it falls back under. */
+	config = valid_config();
+	config.metadata_default_ttl_ms = 1000;
+	config.jwks_default_ttl_ms = 1000;
+	config.cache_max_ttl_ms = 1000;
+	config.cache_min_ttl_ms = 2000;
+	expect_error(&config, &hba, PG_OAUTH_POLICY_INVALID_CACHE_POLICY,
+				 "minimum retention above the maximum lifetime was accepted");
 
 	config = valid_config();
 	hba = valid_hba();

@@ -29,6 +29,7 @@ pg_oauth_validator.allow_insecure_http = off
 pg_oauth_validator.metadata_default_ttl = '5min'
 pg_oauth_validator.jwks_default_ttl = '5min'
 pg_oauth_validator.cache_max_ttl = '1h'
+pg_oauth_validator.cache_min_ttl = '30s'
 pg_oauth_validator.jwks_stale_grace = '0s'
 pg_oauth_validator.unknown_kid_refresh_cooldown = '30s'
 pg_oauth_validator.cache_max_entries = 32
@@ -67,6 +68,17 @@ provider response carries no explicit freshness (`Cache-Control: max-age` or
 `Expires`). `cache_max_ttl` caps both fallback and provider-advertised
 freshness. The accepted ranges are 1 second to 1 hour for each fallback and
 1 second to 24 hours for the maximum.
+
+`cache_min_ttl` (default 30 seconds, 0 to 5 minutes, and not above
+`cache_max_ttl`) is the shortest time a response is retained when the provider
+sends `no-store`, `no-cache`, `max-age=0` or unusable headers. Without it such a
+provider is queried on every authentication and overlapping authentications
+fail while waiting. Metadata and JWKS are public, so retention does not
+disclose anything; the cost is that a key the provider withdraws stays trusted
+for up to this time. A positive provider lifetime is never extended, `no-store`
+lifetimes are capped at the minimum, and `no-cache` or `must-revalidate`
+responses are revalidated once it ends and are never used stale. `0` restores
+strict RFC 9111 behavior and one provider request per authentication.
 
 Freshness headers that are present but unusable never deny authentication and
 never extend freshness. Duplicate or malformed `max-age`, malformed `Age`, an

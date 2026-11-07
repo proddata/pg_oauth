@@ -3,7 +3,7 @@
 #include <limits.h>
 #include <string.h>
 
-#define PG_OAUTH_CACHE_KEY_VERSION 5
+#define PG_OAUTH_CACHE_KEY_VERSION 6
 
 static bool
 append_bytes(PgOAuthCacheKey *key, const void *value, size_t length)
@@ -114,6 +114,7 @@ pg_oauth_cache_key_build(const PgOAuthCacheKeyPolicy *policy,
 		!append_u64(key, policy->metadata_default_ttl_ms) ||
 		!append_u64(key, policy->jwks_default_ttl_ms) ||
 		!append_u64(key, policy->cache_max_ttl_ms) ||
+		!append_u64(key, policy->cache_min_ttl_ms) ||
 		!append_u64(key, policy->unknown_kid_refresh_cooldown_ms) ||
 		!append_u8(key, policy->allow_insecure_http ? 1 : 0))
 	{
