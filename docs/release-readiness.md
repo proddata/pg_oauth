@@ -56,7 +56,7 @@ following hold for the exact reviewed commit:
 - Every row of the PAM section of the
   [traceability matrix](security/initial-review-traceability.md#pam-module-experimental-and-the-adr-0009-release-gate)
   is **Covered**, or its gap is closed by a recorded, dated decision that names
-  a reviewer. Open gaps today are capacity isolation, lock contention, a killed
+  a reviewer. Open gaps today are capacity isolation, lock contention, a hung
   refresh owner and slow-DNS behavior.
 - The RPM subpackage and the SELinux enforcing run pass on each packaged
   platform ([RPM platforms](rpm-platforms.md)), with PAM upgrade and rollback

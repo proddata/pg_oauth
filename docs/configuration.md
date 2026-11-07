@@ -352,6 +352,19 @@ therefore requires a PostgreSQL restart to become usable. If it changes during
 a reload, cache attachment and authentication fail closed until restart; this
 prevents a backend from silently continuing with the old capacity.
 
+Entries created under a previous cache policy are unreachable after such a
+reload, but they keep their slots until their fresh lifetime (at most
+`cache_max_ttl`) and any `jwks_stale_grace` have ended; the cache never evicts
+a still-usable entry to make room. Each policy generation that sees traffic
+uses two slots, one for the metadata and one for the key set. When live and
+unreachable entries together fill `cache_max_entries`, new entries cannot be
+stored and authentications that miss the cache are denied (diagnostic
+`issuer_key=issuer_key_cache`) until old entries expire. This fails closed.
+With the default of 32 entries it takes about 16 reloads of cache-key settings
+inside that window. Recover by restarting PostgreSQL, which empties the cache.
+Avoid it by changing cache-key settings in one reload instead of several, or by
+raising `cache_max_entries` (which also requires a restart).
+
 The trust-root path is part of the canonical cache key. Replacing the contents
 of `ca_file` at the same path is not observable as a GUC change: use a new,
 versioned path and reload, or restart PostgreSQL, when rotating that bundle.
