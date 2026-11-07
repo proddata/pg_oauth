@@ -948,6 +948,11 @@ def test_local_idp_transport_failures_deny_and_recover(integration_environment):
                     results.append(rejected)
                     assert rejected.returncode != 0, f"{resource} {fault} accepted"
                     assert elapsed < 8.0, f"{resource} {fault} was not bounded"
+                    # The client's 5s connect timeout can expire together with the
+                    # validator's total HTTP timeout, before the backend has
+                    # finished the failed refresh. Recovery is only meaningful
+                    # once that refresh is over.
+                    idp.wait_until_idle()
 
                     idp.set_fault(resource, None)
                     recovered = connect(token)

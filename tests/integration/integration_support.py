@@ -280,6 +280,8 @@ class LocalIdp:
         self.delays = {"metadata": 0, "jwks": 0}
         self.requests = {"metadata": 0, "jwks": 0}
         self.requests_lock = threading.Lock()
+        self.idle = threading.Condition()
+        self.active_requests = 0
         self.keys = {}
         self.published_keys = []
         self.active_key_id = None
@@ -295,6 +297,13 @@ class LocalIdp:
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
+                idp.begin_request()
+                try:
+                    self.serve()
+                finally:
+                    idp.end_request()
+
+            def serve(self):
                 if self.path == "/.well-known/openid-configuration":
                     resource = "metadata"
                     idp.record_request(resource)
@@ -414,6 +423,28 @@ class LocalIdp:
     def record_request(self, resource):
         with self.requests_lock:
             self.requests[resource] += 1
+
+    def begin_request(self):
+        with self.idle:
+            self.active_requests += 1
+
+    def end_request(self):
+        with self.idle:
+            self.active_requests -= 1
+            self.idle.notify_all()
+
+    def wait_until_idle(self, timeout=10.0):
+        """Wait until every request the provider has accepted has been answered.
+
+        A client can give up (libpq connect_timeout) at the same moment the
+        validator's own HTTP deadline expires, while the backend is still
+        finishing the failed refresh. A request issued then would legitimately
+        wait for that refresh owner and be denied with it (docs/configuration.md,
+        refresh_wait_timeout), so tests that need a clean follow-up wait here.
+        """
+        with self.idle:
+            if not self.idle.wait_for(lambda: self.active_requests == 0, timeout):
+                raise AssertionError("provider requests were still in flight")
 
     def request_counts(self):
         with self.requests_lock:
