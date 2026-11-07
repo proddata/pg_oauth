@@ -56,9 +56,8 @@ following hold for the exact reviewed commit:
 - Every row of the PAM section of the
   [traceability matrix](security/initial-review-traceability.md#pam-module-experimental-and-the-adr-0009-release-gate)
   is **Covered**, or its gap is closed by a recorded, dated decision that names
-  a reviewer. Re-read the matrix at release time: when this was written the only
-  row that was not **Covered** was the PostgreSQL 15 and 16 preload row, whose
-  shared state is exercised but not asserted to be a single copy.
+  a reviewer. Re-read the matrix at release time; when this was written every
+  row was **Covered**.
 - The RPM subpackage and the SELinux enforcing run pass on each packaged
   platform ([RPM platforms](rpm-platforms.md)), with PAM upgrade and rollback
   rehearsed using matching module and configuration. The rehearsal needs a
