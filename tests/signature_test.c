@@ -182,7 +182,7 @@ typedef struct SigningVariant
 {
 	const EVP_MD *digest;		/* NULL means the key type's default */
 	bool		pss;			/* RSASSA-PSS instead of PKCS#1 v1.5 */
-} SigningVariant;
+}			SigningVariant;
 
 static unsigned char *
 sign_input_variant(EVP_PKEY *key, const char *input, size_t *signature_length,
@@ -312,7 +312,7 @@ check_header_algorithm_binding(void)
 		const char *header_algorithm;
 		const EVP_MD *(*digest) (void);
 		bool		pss;
-	} variants[] = {
+	}			variants[] = {
 		{"RS384", EVP_sha384, false},
 		{"RS512", EVP_sha512, false},
 		{"PS256", EVP_sha256, true},

@@ -72,8 +72,9 @@ main(void)
 	PgOAuthValidationPolicy policy;
 
 	/*
-	 * Honour the environment's locale (run with LC_ALL=<a single-byte locale>)
-	 * to prove that classification of untrusted bytes does not depend on it.
+	 * Honour the environment's locale (run with LC_ALL=<a single-byte
+	 * locale>) to prove that classification of untrusted bytes does not
+	 * depend on it.
 	 */
 	setlocale(LC_CTYPE, "");
 
@@ -319,8 +320,8 @@ main(void)
 	/*
 	 * Bytes at or above 0x80 are ordinary: a valid UTF-8 path may contain
 	 * 0x80-0x9f (controls in ISO-8859-1), and a host name may not contain a
-	 * Latin-1 letter such as 0xe9 (alphanumeric in ISO-8859-1). The result must
-	 * be the same in every locale.
+	 * Latin-1 letter such as 0xe9 (alphanumeric in ISO-8859-1). The result
+	 * must be the same in every locale.
 	 */
 	config = valid_config();
 	hba = valid_hba();
