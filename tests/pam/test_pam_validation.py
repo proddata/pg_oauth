@@ -185,6 +185,25 @@ def test_unknown_key_refresh_is_suppressed_across_backends(environment, cold_pol
     assert idp.request_counts()["jwks"] <= baseline + 1
 
 
+def test_unknown_key_flood_on_a_cold_cache_is_bounded(environment, cold_policy):
+    """With an empty cache every attacker-chosen key id used to cost two provider
+    requests, because the fetched key set was discarded when it lacked the
+    token's key. The key set is now published, so the cooldown applies."""
+    _, _, idp, *_ = environment
+    before = idp.request_counts()
+    for index in range(12):
+        accepted, _ = connect(
+            environment, idp.sign(subject="appuser", header_key_id=f"cold-unknown-{index}"))
+        assert not accepted
+    flooded = idp.request_counts()
+    assert flooded["metadata"] - before["metadata"] == 1, (before, flooded)
+    assert flooded["jwks"] - before["jwks"] <= 2, (before, flooded)
+    # A legitimate login is served from the key set the flood caused to be cached.
+    accepted, error = connect(environment, idp.sign(subject="appuser"))
+    assert accepted, error
+    assert idp.request_counts() == flooded
+
+
 def test_concurrent_cold_logins_share_one_refresh(environment, cold_policy):
     _, _, idp, *_ = environment
     token = idp.sign(subject="appuser")

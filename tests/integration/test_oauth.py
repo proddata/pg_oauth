@@ -288,6 +288,25 @@ def test_invalid_access_tokens_are_denied_by_postgres(integration_environment):
                 os.environ["SSL_CERT_FILE"] = previous_ca
 
 
+def assert_denied_because(cluster, client, idp, token, user, expected, authenticated=False):
+    """Deny for the stated reason, not merely with a failing exit status.
+
+    `expected` strings must appear in the server log written during this
+    attempt. Unless `authenticated` is set (PostgreSQL itself refused a role
+    for an identity the validator accepted), the connection must never have
+    been recorded as authenticated."""
+    before = len(cluster.logs())
+    result = attempt_oauth(
+        cluster, client, token=token, user=user, issuer=idp.issuer,
+        sslmode="require",
+    )
+    assert result.returncode != 0, "connection was accepted"
+    delta = cluster.logs()[before:]
+    for text in expected:
+        assert text in delta, f"{text!r} missing from:\n{delta}"
+    assert ("connection authenticated:" in delta) == authenticated, delta
+
+
 def test_direct_identity_and_delegated_roles(integration_environment):
     pg_config, validator_library, client = integration_environment
     with tempfile.TemporaryDirectory(prefix="pg-oauth-idp-roles-") as directory:
@@ -348,10 +367,12 @@ def test_direct_identity_and_delegated_roles(integration_environment):
             )
             assert accepted_direct.stdout.strip() == "provider-subject|oauth:provider-subject"
             assert 'identity="provider-subject" method=oauth' in direct_cluster.logs()
-            assert attempt_oauth(
-                direct_cluster, client, token=direct_token,
-                user="postgres", issuer=idp.issuer, sslmode="require",
-            ).returncode != 0
+            # The validator accepts the identity; PostgreSQL refuses the role.
+            assert_denied_because(
+                direct_cluster, client, idp, direct_token, "postgres",
+                ['connection authenticated: identity="provider-subject"'],
+                authenticated=True,
+            )
 
             delegated_cluster.start()
             psql(delegated_cluster, "CREATE ROLE app_reader LOGIN")
@@ -372,14 +393,14 @@ def test_direct_identity_and_delegated_roles(integration_environment):
             )
             assert accepted_scalar.returncode == 0, accepted_scalar.stderr
             assert accepted_scalar.stdout.strip() == "app_reader|oauth:principal"
-            assert attempt_oauth(
-                delegated_cluster, client, token=scalar_role,
-                user="reporting", issuer=idp.issuer, sslmode="require",
-            ).returncode != 0
-            assert attempt_oauth(
-                delegated_cluster, client, token=delegated_token,
-                user="postgres", issuer=idp.issuer, sslmode="require",
-            ).returncode != 0
+            assert_denied_because(
+                delegated_cluster, client, idp, scalar_role, "reporting",
+                ["claims=unauthorized_role"],
+            )
+            assert_denied_because(
+                delegated_cluster, client, idp, delegated_token, "postgres",
+                ["claims=unauthorized_role"],
+            )
             accepted_privileged = attempt_oauth(
                 delegated_cluster, client, token=privileged_token,
                 user="postgres", issuer=idp.issuer, sslmode="require",
@@ -388,34 +409,36 @@ def test_direct_identity_and_delegated_roles(integration_environment):
                 accepted_privileged.stderr + "\n" + delegated_cluster.logs()
             )
             assert accepted_privileged.stdout.strip() == "postgres|oauth:principal"
-            assert attempt_oauth(
-                delegated_cluster, client, token=insufficient_roles,
-                user="reporting", issuer=idp.issuer, sslmode="require",
-            ).returncode != 0
-            assert attempt_oauth(
-                delegated_cluster, client, token=duplicate_roles,
-                user="reporting", issuer=idp.issuer, sslmode="require",
-            ).returncode != 0
+            assert_denied_because(
+                delegated_cluster, client, idp, insufficient_roles, "reporting",
+                ["claims=unauthorized_role"],
+            )
+            assert_denied_because(
+                delegated_cluster, client, idp, duplicate_roles, "reporting",
+                ["claims=invalid_roles"],
+            )
 
             policy_only_cluster.start()
             psql(policy_only_cluster, "CREATE ROLE reporting LOGIN")
-            assert attempt_oauth(
-                policy_only_cluster, client, token=delegated_token,
-                user="reporting", issuer=idp.issuer, sslmode="require",
-            ).returncode != 0
+            # A role claim without HBA delegation is a configuration failure.
+            assert_denied_because(
+                policy_only_cluster, client, idp, delegated_token, "reporting",
+                ["code=policy_delegation_mismatch"],
+            )
 
             hba_only_cluster.start()
             psql(hba_only_cluster, "CREATE ROLE reporting LOGIN")
-            assert attempt_oauth(
-                hba_only_cluster, client, token=delegated_token,
-                user="reporting", issuer=idp.issuer, sslmode="require",
-            ).returncode != 0
+            assert_denied_because(
+                hba_only_cluster, client, idp, delegated_token, "reporting",
+                ["code=policy_delegation_mismatch"],
+            )
 
             hba_capped_cluster.start()
-            assert attempt_oauth(
-                hba_capped_cluster, client, token=privileged_token,
-                user="postgres", issuer=idp.issuer, sslmode="require",
-            ).returncode != 0
+            # The HBA USER field caps what the claim can grant.
+            assert_denied_because(
+                hba_capped_cluster, client, idp, privileged_token, "postgres",
+                ["no pg_hba.conf entry"],
+            )
         finally:
             direct_cluster.stop()
             delegated_cluster.stop()
@@ -428,6 +451,66 @@ def test_direct_identity_and_delegated_roles(integration_environment):
             else:
                 os.environ["SSL_CERT_FILE"] = previous_ca
 
+
+
+def test_malformed_and_oversized_role_claims_are_denied_as_invalid_roles(integration_environment):
+    """A role claim is trusted only when it is exactly well formed. A valid
+    role listed next to a malformed one does not authorize anything, and the
+    count and length bounds hold at their boundaries."""
+    pg_config, validator_library, client = integration_environment
+    with tempfile.TemporaryDirectory(prefix="pg-oauth-idp-bad-roles-") as directory:
+        idp = LocalIdp(pathlib.Path(directory))
+        cluster = TemporaryPostgres(
+            pg_config, validator_library, issuer=idp.issuer,
+            role_claim="roles", delegate_ident_mapping=True,
+            hba_users="reporting", ca_file=idp.tls_certificate,
+            server_certificate=idp.tls_certificate, server_key=idp.tls_key,
+        )
+        malformed = {
+            "empty list": {"roles": []},
+            "empty string": {"roles": ""},
+            "empty entry": {"roles": [""]},
+            "number": {"roles": 5},
+            "null": {"roles": None},
+            "object": {"roles": {"reporting": True}},
+            "non-string next to a valid role": {"roles": ["reporting", 7]},
+            "control character": {"roles": ["reporting", "bad\u0001role"]},
+            "role over 63 bytes": {"roles": ["reporting", "r" * 64]},
+            "more than 64 roles": {"roles": ["reporting"] + [f"r{i}" for i in range(64)]},
+            "claim absent": {},
+        }
+        previous_ca = os.environ.get("SSL_CERT_FILE")
+        os.environ["SSL_CERT_FILE"] = str(idp.tls_certificate)
+        try:
+            cluster.start()
+            psql(cluster, "CREATE ROLE reporting LOGIN")
+            for name, claims in malformed.items():
+                assert_denied_because(
+                    cluster, client, idp, idp.sign(extra_claims=claims), "reporting",
+                    ["claims=invalid_roles"],
+                )
+            # The boundaries themselves are accepted: 64 roles, 63-byte names.
+            at_limit = ["reporting"] + [f"r{i}" for i in range(63)]
+            assert len(at_limit) == 64
+            accepted = attempt_oauth(
+                cluster, client, token=idp.sign(extra_claims={"roles": at_limit}),
+                user="reporting", issuer=idp.issuer, sslmode="require",
+            )
+            assert accepted.returncode == 0, accepted.stderr + "\n" + cluster.logs()
+            long_name = "r" * 63
+            accepted = attempt_oauth(
+                cluster, client,
+                token=idp.sign(extra_claims={"roles": ["reporting", long_name]}),
+                user="reporting", issuer=idp.issuer, sslmode="require",
+            )
+            assert accepted.returncode == 0, accepted.stderr + "\n" + cluster.logs()
+        finally:
+            cluster.stop()
+            idp.close()
+            if previous_ca is None:
+                os.environ.pop("SSL_CERT_FILE", None)
+            else:
+                os.environ["SSL_CERT_FILE"] = previous_ca
 
 def test_reload_separates_trust_policy_cache_entries(integration_environment):
     pg_config, validator_library, client = integration_environment
