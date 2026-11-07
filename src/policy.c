@@ -10,10 +10,10 @@
  */
 #include "postgres.h"
 
-#include <ctype.h>
 #include <string.h>
 
 #include "policy.h"
+#include "ascii.h"
 
 #define PG_OAUTH_MAX_AUDIENCES 16
 #define PG_OAUTH_MAX_AUTHN_CLAIM_LENGTH 128
@@ -44,12 +44,12 @@ parse_token_types(const char *value, uint8_t *types)
 		size_t		length = end != NULL ? (size_t) (end - entry) : strlen(entry);
 		uint8_t		type;
 
-		while (length > 0 && isspace((unsigned char) *entry))
+		while (length > 0 && pg_oauth_ascii_isspace((unsigned char) *entry))
 		{
 			entry++;
 			length--;
 		}
-		while (length > 0 && isspace((unsigned char) entry[length - 1]))
+		while (length > 0 && pg_oauth_ascii_isspace((unsigned char) entry[length - 1]))
 			length--;
 		if (length == strlen("at+jwt") &&
 			memcmp(entry, "at+jwt", length) == 0)
@@ -83,10 +83,10 @@ validate_audiences(const char *value)
 		const char *end = strchr(entry, ',');
 		const char *trimmed_end = end != NULL ? end : entry + strlen(entry);
 
-		while (*entry != '\0' && isspace((unsigned char) *entry))
+		while (*entry != '\0' && pg_oauth_ascii_isspace((unsigned char) *entry))
 			entry++;
 		while (trimmed_end > entry &&
-			   isspace((unsigned char) trimmed_end[-1]))
+			   pg_oauth_ascii_isspace((unsigned char) trimmed_end[-1]))
 			trimmed_end--;
 
 		if (trimmed_end == entry || ++count > PG_OAUTH_MAX_AUDIENCES)
@@ -94,7 +94,7 @@ validate_audiences(const char *value)
 
 		for (const char *cursor = entry; cursor < trimmed_end; cursor++)
 		{
-			if (iscntrl((unsigned char) *cursor))
+			if (pg_oauth_ascii_iscntrl((unsigned char) *cursor))
 				return false;
 		}
 
@@ -128,12 +128,12 @@ parse_algorithms(const char *value, uint32 *algorithms)
 		size_t		length = end != NULL ? (size_t) (end - entry) : strlen(entry);
 		uint32		algorithm;
 
-		while (length > 0 && isspace((unsigned char) *entry))
+		while (length > 0 && pg_oauth_ascii_isspace((unsigned char) *entry))
 		{
 			entry++;
 			length--;
 		}
-		while (length > 0 && isspace((unsigned char) entry[length - 1]))
+		while (length > 0 && pg_oauth_ascii_isspace((unsigned char) entry[length - 1]))
 			length--;
 
 		if (length == 5 && memcmp(entry, "RS256", length) == 0)
@@ -174,8 +174,8 @@ validate_claim_name(const char *claim)
 
 	for (size_t i = 0; i < length; i++)
 	{
-		if (iscntrl((unsigned char) claim[i]) ||
-			isspace((unsigned char) claim[i]))
+		if (pg_oauth_ascii_iscntrl((unsigned char) claim[i]) ||
+			pg_oauth_ascii_isspace((unsigned char) claim[i]))
 			return false;
 	}
 
@@ -197,10 +197,10 @@ validate_jwks_hosts(const char *value)
 		const char *trimmed_end = end != NULL ? end : entry + strlen(entry);
 		size_t		length;
 
-		while (*entry != '\0' && isspace((unsigned char) *entry))
+		while (*entry != '\0' && pg_oauth_ascii_isspace((unsigned char) *entry))
 			entry++;
 		while (trimmed_end > entry &&
-			   isspace((unsigned char) trimmed_end[-1]))
+			   pg_oauth_ascii_isspace((unsigned char) trimmed_end[-1]))
 			trimmed_end--;
 		length = (size_t) (trimmed_end - entry);
 		if (length == 0 || length > PG_OAUTH_MAX_HOST_LENGTH ||
@@ -209,7 +209,7 @@ validate_jwks_hosts(const char *value)
 			return false;
 		for (const char *cursor = entry; cursor < trimmed_end; cursor++)
 		{
-			if (!(isalnum((unsigned char) *cursor) || *cursor == '.' ||
+			if (!(pg_oauth_ascii_isalnum((unsigned char) *cursor) || *cursor == '.' ||
 				  *cursor == '-'))
 				return false;
 		}
@@ -297,7 +297,7 @@ pg_oauth_policy_build(const PgOAuthPolicyConfig *config,
 		return PG_OAUTH_POLICY_INVALID_CA_FILE;
 	for (const char *cursor = config->ca_file; *cursor != '\0'; cursor++)
 	{
-		if (iscntrl((unsigned char) *cursor))
+		if (pg_oauth_ascii_iscntrl((unsigned char) *cursor))
 			return PG_OAUTH_POLICY_INVALID_CA_FILE;
 	}
 	if (config->clock_skew_ms < 0 ||
@@ -348,4 +348,50 @@ pg_oauth_policy_build(const PgOAuthPolicyConfig *config,
 	policy->allow_insecure_http = config->allow_insecure_http;
 
 	return PG_OAUTH_POLICY_OK;
+}
+
+/* Stable, non-sensitive diagnostic codes; never include configuration values. */
+const char *
+pg_oauth_policy_error_code(PgOAuthPolicyError error)
+{
+	switch (error)
+	{
+		case PG_OAUTH_POLICY_OK:
+			return "policy_ok";
+		case PG_OAUTH_POLICY_INVALID_ARGUMENT:
+			return "policy_invalid_argument";
+		case PG_OAUTH_POLICY_MISSING_ISSUER:
+			return "policy_missing_issuer";
+		case PG_OAUTH_POLICY_MISSING_SCOPES:
+			return "policy_missing_scopes";
+		case PG_OAUTH_POLICY_MISSING_AUDIENCE:
+			return "policy_missing_audience";
+		case PG_OAUTH_POLICY_INVALID_AUDIENCES:
+			return "policy_invalid_audiences";
+		case PG_OAUTH_POLICY_INVALID_ALGORITHMS:
+			return "policy_invalid_algorithms";
+		case PG_OAUTH_POLICY_INVALID_TOKEN_TYPE:
+			return "policy_invalid_token_type";
+		case PG_OAUTH_POLICY_INVALID_AUTHN_CLAIM:
+			return "policy_invalid_authn_claim";
+		case PG_OAUTH_POLICY_INVALID_ROLE_CLAIM:
+			return "policy_invalid_role_claim";
+		case PG_OAUTH_POLICY_DELEGATION_MISMATCH:
+			return "policy_delegation_mismatch";
+		case PG_OAUTH_POLICY_INVALID_JWKS_HOSTS:
+			return "policy_invalid_jwks_hosts";
+		case PG_OAUTH_POLICY_INVALID_CA_FILE:
+			return "policy_invalid_ca_file";
+		case PG_OAUTH_POLICY_INVALID_CLOCK_SKEW:
+			return "policy_invalid_clock_skew";
+		case PG_OAUTH_POLICY_INVALID_TOKEN_SIZE:
+			return "policy_invalid_token_size";
+		case PG_OAUTH_POLICY_INVALID_CACHE_POLICY:
+			return "policy_invalid_cache_policy";
+		case PG_OAUTH_POLICY_UNKNOWN_POLICY:
+			return "policy_unknown_policy";
+		case PG_OAUTH_POLICY_OPENID_ONLY_SCOPES:
+			return "policy_openid_only_scopes";
+	}
+	return "policy_unknown_error";
 }

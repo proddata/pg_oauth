@@ -264,6 +264,25 @@ main(void)
 	expect_json_error("{\"alg\":\"RS256\",\"typ\":\"at+jwt\",\"kid\":\"k\",\"crit\":[]}",
 					  "{}", PG_OAUTH_JWT_ENVELOPE_UNSUPPORTED_HEADER,
 					  "critical extension was accepted");
+	/* Every way for a token to name, embed or pin its own key is refused. */
+	expect_json_error("{\"alg\":\"RS256\",\"typ\":\"at+jwt\",\"kid\":\"k\",\"jwk\":{\"kty\":\"RSA\"}}",
+					  "{}", PG_OAUTH_JWT_ENVELOPE_UNSUPPORTED_HEADER,
+					  "token-embedded key was accepted");
+	expect_json_error("{\"alg\":\"RS256\",\"typ\":\"at+jwt\",\"kid\":\"k\",\"x5u\":\"https://attacker/c.pem\"}",
+					  "{}", PG_OAUTH_JWT_ENVELOPE_UNSUPPORTED_HEADER,
+					  "token-provided certificate URL was accepted");
+	expect_json_error("{\"alg\":\"RS256\",\"typ\":\"at+jwt\",\"kid\":\"k\",\"x5c\":[\"MIIB\"]}",
+					  "{}", PG_OAUTH_JWT_ENVELOPE_UNSUPPORTED_HEADER,
+					  "token-embedded certificate chain was accepted");
+	expect_json_error("{\"alg\":\"RS256\",\"typ\":\"at+jwt\",\"kid\":\"k\",\"x5t\":\"abc\"}",
+					  "{}", PG_OAUTH_JWT_ENVELOPE_UNSUPPORTED_HEADER,
+					  "certificate SHA-1 thumbprint was accepted");
+	expect_json_error("{\"alg\":\"RS256\",\"typ\":\"at+jwt\",\"kid\":\"k\",\"x5t#S256\":\"abc\"}",
+					  "{}", PG_OAUTH_JWT_ENVELOPE_UNSUPPORTED_HEADER,
+					  "certificate SHA-256 thumbprint was accepted");
+	expect_json_error("{\"alg\":\"RS256\",\"typ\":\"at+jwt\",\"kid\":\"k\",\"crit\":[\"exp\"]}",
+					  "{}", PG_OAUTH_JWT_ENVELOPE_UNSUPPORTED_HEADER,
+					  "non-empty critical extension list was accepted");
 	expect_json_error("{\"alg\":\"RS256\",\"typ\":\"at+jwt\",\"kid\":\"k\",\"zip\":\"DEF\"}",
 					  "{}", PG_OAUTH_JWT_ENVELOPE_UNSUPPORTED_HEADER,
 					  "compression was accepted");

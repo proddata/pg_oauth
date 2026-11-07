@@ -421,5 +421,89 @@ main(void)
 	if (pg_oauth_claims_validate(payload, &policy, &claims) != PG_OAUTH_CLAIMS_OK)
 		fail("custom delegated roles claim was rejected");
 	json_decref(payload);
+
+	/* A fresh policy: earlier cases above changed role settings on it. */
+	policy = valid_policy();
+
+	/* Temporal claims: wrong types, signs and the exact skew boundaries. */
+#define CLAIMS(extra) \
+	"{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\"," \
+	"\"sub\":\"p\",\"scope\":\"connect:postgres read:metadata\"," extra "}"
+	expect_error(CLAIMS("\"exp\":\"1100\""), &policy,
+				 PG_OAUTH_CLAIMS_INVALID_EXPIRY, "string expiry was accepted");
+	expect_error(CLAIMS("\"exp\":0"), &policy,
+				 PG_OAUTH_CLAIMS_INVALID_EXPIRY, "zero expiry was accepted");
+	expect_error(CLAIMS("\"exp\":-5"), &policy,
+				 PG_OAUTH_CLAIMS_INVALID_EXPIRY, "negative expiry was accepted");
+	expect_error(CLAIMS("\"exp\":true"), &policy,
+				 PG_OAUTH_CLAIMS_INVALID_EXPIRY, "boolean expiry was accepted");
+	expect_error(CLAIMS("\"exp\":null"), &policy,
+				 PG_OAUTH_CLAIMS_INVALID_EXPIRY, "null expiry was accepted");
+	expect_error(CLAIMS("\"exp\":1100,\"nbf\":\"900\""), &policy,
+				 PG_OAUTH_CLAIMS_INVALID_NOT_BEFORE, "string not-before was accepted");
+	expect_error(CLAIMS("\"exp\":1100,\"nbf\":-1"), &policy,
+				 PG_OAUTH_CLAIMS_INVALID_NOT_BEFORE, "negative not-before was accepted");
+	expect_error(CLAIMS("\"exp\":1100,\"nbf\":true"), &policy,
+				 PG_OAUTH_CLAIMS_INVALID_NOT_BEFORE, "boolean not-before was accepted");
+	expect_error(CLAIMS("\"exp\":1100,\"nbf\":1061"), &policy,
+				 PG_OAUTH_CLAIMS_NOT_YET_VALID, "not-before one second past skew was accepted");
+	expect_error(CLAIMS("\"exp\":1100,\"iat\":\"900\""), &policy,
+				 PG_OAUTH_CLAIMS_INVALID_ISSUED_AT, "string issued-at was accepted");
+	expect_error(CLAIMS("\"exp\":1100,\"iat\":-1"), &policy,
+				 PG_OAUTH_CLAIMS_INVALID_ISSUED_AT, "negative issued-at was accepted");
+	expect_error(CLAIMS("\"exp\":1100,\"iat\":1061"), &policy,
+				 PG_OAUTH_CLAIMS_ISSUED_IN_FUTURE, "issued-at one second past skew was accepted");
+	expect_error(CLAIMS("\"exp\":940"), &policy,
+				 PG_OAUTH_CLAIMS_EXPIRED, "expiry exactly at the skew boundary was accepted");
+	{
+		static const char *const accepted[] = {
+			CLAIMS("\"exp\":941"),	/* one second inside the skew */
+			CLAIMS("\"exp\":9223372036854775807"),	/* largest NumericDate */
+			CLAIMS("\"exp\":1100,\"nbf\":1060"),	/* exactly the skew ahead */
+			CLAIMS("\"exp\":1100,\"iat\":1060"),
+		};
+
+		for (size_t i = 0; i < sizeof(accepted) / sizeof(accepted[0]); i++)
+		{
+			json_t	   *document = parse_payload(accepted[i]);
+
+			if (pg_oauth_claims_validate(document, &policy, &claims) !=
+				PG_OAUTH_CLAIMS_OK)
+				fail("a claim on the accepted side of a boundary was rejected");
+			json_decref(document);
+		}
+	}
+
+	/* Audience and issuer shapes. */
+#define WITH_AUD(aud) \
+	"{\"iss\":\"https://issuer.example/\",\"aud\":" aud ",\"exp\":1100," \
+	"\"sub\":\"p\",\"scope\":\"connect:postgres read:metadata\"}"
+	expect_error(WITH_AUD("\"\""), &policy, PG_OAUTH_CLAIMS_INVALID_AUDIENCE,
+				 "empty audience string was accepted");
+	expect_error(WITH_AUD("null"), &policy, PG_OAUTH_CLAIMS_INVALID_AUDIENCE,
+				 "null audience was accepted");
+	expect_error(WITH_AUD("[1]"), &policy, PG_OAUTH_CLAIMS_INVALID_AUDIENCE,
+				 "numeric audience element was accepted");
+	expect_error(WITH_AUD("[\"postgres://primary\",1]"), &policy,
+				 PG_OAUTH_CLAIMS_INVALID_AUDIENCE,
+				 "valid audience beside a non-string element was accepted");
+	expect_error(WITH_AUD("[\"postgres://primary\",\"\"]"), &policy,
+				 PG_OAUTH_CLAIMS_INVALID_AUDIENCE,
+				 "valid audience beside an empty element was accepted");
+	expect_error("{\"iss\":\"\",\"aud\":\"postgres://primary\",\"exp\":1100,"
+				 "\"sub\":\"p\",\"scope\":\"connect:postgres read:metadata\"}",
+				 &policy, PG_OAUTH_CLAIMS_INVALID_ISSUER,
+				 "empty issuer was accepted");
+	expect_error("{\"iss\":\"HTTPS://issuer.example/\",\"aud\":\"postgres://primary\","
+				 "\"exp\":1100,\"sub\":\"p\",\"scope\":\"connect:postgres read:metadata\"}",
+				 &policy, PG_OAUTH_CLAIMS_INVALID_ISSUER,
+				 "case-folded issuer was accepted");
+	expect_error("{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\","
+				 "\"exp\":1100,\"sub\":\"p\",\"scope\":[\"connect:postgres\",1]}",
+				 &policy, PG_OAUTH_CLAIMS_INVALID_SCOPE,
+				 "numeric scope array element was accepted");
+#undef WITH_AUD
+#undef CLAIMS
+
 	return EXIT_SUCCESS;
 }

@@ -1,6 +1,5 @@
 #include "postgres.h"
 
-#include <ctype.h>
 #include <limits.h>
 #include <string.h>
 
@@ -8,6 +7,7 @@
 
 #include "pam_credential.h"
 #include "pam_policy.h"
+#include "ascii.h"
 
 typedef enum ArgumentKind
 {
@@ -152,7 +152,7 @@ pg_oauth_pam_policy_parse(int argc, const char **argv, PgOAuthPamPolicy *policy)
 			return PG_OAUTH_PAM_POLICY_VALUE_TOO_LONG;
 		for (const char *cursor = argument; *cursor != '\0'; cursor++)
 		{
-			if (iscntrl((unsigned char) *cursor))
+			if (pg_oauth_ascii_iscntrl((unsigned char) *cursor))
 				return PG_OAUTH_PAM_POLICY_MALFORMED_ARGUMENT;
 		}
 		equals = strchr(argument, '=');

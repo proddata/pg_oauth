@@ -84,6 +84,35 @@ def test_missing_audience_fails_closed(integration_environment):
         assert result.returncode != 0
         assert TOKEN not in result.stderr
         assert TOKEN not in logs
+        assert "code=policy_missing_audience" in logs
+    finally:
+        cluster.stop()
+
+
+@pytest.mark.parametrize("cluster_options,code", [
+    # An HBA rule that only requires `openid` authorizes nothing meaningful.
+    ({"scope": "openid"}, "policy_openid_only_scopes"),
+    ({"scope": "openid openid"}, "policy_openid_only_scopes"),
+    # The maximum lifetime may not be shorter than the fallback lifetimes.
+    ({"extra_config": "pg_oauth_validator.cache_max_ttl = '1min'\n"},
+     "policy_invalid_cache_policy"),
+    ({"extra_config": "pg_oauth_validator.allowed_algorithms = 'none'\n"},
+     "policy_invalid_algorithms"),
+])
+def test_configuration_failures_log_a_stable_code(
+        integration_environment, cluster_options, code):
+    """A rejected configuration denies every login. The operator must be able to
+    tell why from the server log, without any token or configuration value."""
+    pg_config, validator_library, client = integration_environment
+    cluster = TemporaryPostgres(pg_config, validator_library, **cluster_options)
+    try:
+        cluster.start()
+        result = attempt_oauth(cluster, client)
+        logs = cluster.logs()
+        assert result.returncode != 0
+        assert "OAuth validator configuration rejected" in logs
+        assert f"code={code}" in logs
+        assert TOKEN not in logs + result.stderr
     finally:
         cluster.stop()
 

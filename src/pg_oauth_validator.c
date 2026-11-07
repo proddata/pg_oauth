@@ -32,6 +32,7 @@ PG_MODULE_MAGIC;
 #endif
 
 static bool pg_oauth_monotonic_ms(int64 *value);
+static void pg_oauth_log_configuration_failure(const char *code);
 static bool pg_oauth_cancel_requested(void *context);
 
 static bool pg_oauth_validator_validate(const ValidatorModuleState *state,
@@ -74,6 +75,7 @@ pg_oauth_validator_validate(const ValidatorModuleState *state,
 	PgOAuthPolicyConfig config;
 	PgOAuthHbaPolicy hba_policy;
 	PgOAuthValidationPolicy policy;
+	PgOAuthPolicyError policy_error;
 	PgOAuthValidatorPolicy validator_policy;
 	PgOAuthIssuerKeyCachePolicy cache_policy;
 	PgOAuthValidatorResult validation;
@@ -98,25 +100,44 @@ pg_oauth_validator_validate(const ValidatorModuleState *state,
 	 * administrator GUCs.
 	 */
 	if (!pg_oauth_hba_policy_read(state, &hba_policy))
+	{
+		pg_oauth_log_configuration_failure("hba_rule_unreadable");
 		return false;
+	}
 	pg_oauth_config_snapshot(&config);
-	if (pg_oauth_policy_build(&config, &hba_policy, &policy) !=
-		PG_OAUTH_POLICY_OK)
+	policy_error = pg_oauth_policy_build(&config, &hba_policy, &policy);
+	if (policy_error != PG_OAUTH_POLICY_OK)
+	{
+		pg_oauth_log_configuration_failure(pg_oauth_policy_error_code(policy_error));
 		return false;
+	}
 	if (!pg_oauth_shared_cache_configure_capacity(
 												  pg_oauth_config_cache_max_entries()) ||
-		!pg_oauth_shared_cache_io(&cache_io) ||
-		!pg_oauth_monotonic_ms(&monotonic_ms))
+		!pg_oauth_shared_cache_io(&cache_io))
+	{
+		pg_oauth_log_configuration_failure("shared_cache_unavailable");
 		return false;
+	}
+	if (!pg_oauth_monotonic_ms(&monotonic_ms))
+	{
+		pg_oauth_log_configuration_failure("clock_unavailable");
+		return false;
+	}
 	if (!pg_oauth_metadata_url_build(policy.issuer, metadata_url,
 									 sizeof(metadata_url)) ||
 		pg_oauth_http_url_host(metadata_url, PG_OAUTH_MAX_URL_SIZE,
 							   policy.allow_insecure_http, &metadata_host) != PG_OAUTH_HTTP_OK)
+	{
+		pg_oauth_log_configuration_failure("metadata_url_invalid");
 		goto internal_failure;
+	}
 
 	wall_time = time(NULL);
 	if (wall_time < 0)
+	{
+		pg_oauth_log_configuration_failure("clock_unavailable");
 		goto internal_failure;
+	}
 	pg_oauth_validator_policy_assemble(&policy, metadata_host, role,
 									   (int64) wall_time,
 									   pg_oauth_cancel_requested,
@@ -175,6 +196,19 @@ rejected:
 internal_failure:
 	free(metadata_host);
 	return false;
+}
+
+/*
+ * Every login through a rejected configuration is denied, so say why. Only a
+ * stable code is logged: never a token, a claim, or a configuration value.
+ */
+static void
+pg_oauth_log_configuration_failure(const char *code)
+{
+	ereport(LOG,
+			(errmsg("OAuth validator configuration rejected"),
+			 errdetail_internal("code=%s; connections through this rule are denied",
+								code)));
 }
 
 static bool

@@ -41,7 +41,8 @@ class TemporaryPostgres:
                  ca_file="", server_certificate=None, server_key=None,
                  identity_claim="sub", role_claim="",
                  delegate_ident_mapping=False, hba_users="all",
-                 refresh_wait_timeout="5s", extra_config="", hba_lines=None):
+                 refresh_wait_timeout="5s", extra_config="", hba_lines=None,
+                 scope=SCOPE):
         self.pg_config = pathlib.Path(pg_config)
         self.bindir = pathlib.Path(
             command(self.pg_config, "--bindir").stdout.strip()
@@ -68,6 +69,7 @@ class TemporaryPostgres:
         self.refresh_wait_timeout = refresh_wait_timeout
         self.extra_config = extra_config
         self.hba_lines = hba_lines
+        self.scope = scope
         self.port = unused_port()
         self.selinux = os.environ.get("OAUTH_TEST_SELINUX") == "1"
         self.root = pathlib.Path(tempfile.mkdtemp(
@@ -156,7 +158,7 @@ class TemporaryPostgres:
             )
 
         options = (
-            f"issuer={self.issuer} scope=\"{SCOPE}\" "
+            f"issuer={self.issuer} scope=\"{self.scope}\" "
             "validator=pg_oauth_validator"
         )
         if self.identity_map is not None:

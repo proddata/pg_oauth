@@ -368,5 +368,47 @@ main(void)
 	if (strstr(pg_oauth_jwks_error_code(PG_OAUTH_JWKS_INVALID_KEY), "rsa-1") !=
 		NULL)
 		fail("stable JWKS error exposed key data");
+
+	/* Document-level shapes that must never yield a key. */
+	expect_error("[]", "k", PG_OAUTH_ALGORITHM_RS256, PG_OAUTH_JWKS_INVALID_JSON,
+				 "top-level array was accepted");
+	expect_error("{\"keys\":{}}", "k", PG_OAUTH_ALGORITHM_RS256,
+				 PG_OAUTH_JWKS_INVALID_KEYS, "non-array keys member was accepted");
+	expect_error("{\"keys\":[],\"keys\":[]}", "k", PG_OAUTH_ALGORITHM_RS256,
+				 PG_OAUTH_JWKS_INVALID_JSON, "duplicate keys member was accepted");
+	expect_error("{\"keys\":[{\"kid\":\"\",\"kty\":\"RSA\"},{\"kid\":\"k\"}]}", "k",
+				 PG_OAUTH_ALGORITHM_RS256, PG_OAUTH_JWKS_INVALID_KEY_ID,
+				 "empty key identifier on another key was accepted");
+	expect_error("{\"keys\":[{\"kid\":5},{\"kid\":\"k\",\"kty\":\"RSA\"}]}", "k",
+				 PG_OAUTH_ALGORITHM_RS256, PG_OAUTH_JWKS_INVALID_KEY_ID,
+				 "numeric key identifier on another key was accepted");
+	{
+		/* One key more than the policy allows, with the wanted key first. */
+		char		many[2048] = "{\"keys\":[";
+
+		for (int n = 0; n < 17; n++)
+			snprintf(many + strlen(many), sizeof(many) - strlen(many),
+					 "%s{\"kid\":\"k%d\",\"kty\":\"RSA\"}", n == 0 ? "" : ",", n);
+		strncat(many, "]}", sizeof(many) - strlen(many) - 1);
+		expect_error(many, "k0", PG_OAUTH_ALGORITHM_RS256,
+					 PG_OAUTH_JWKS_TOO_MANY_KEYS, "more keys than the limit were accepted");
+	}
+
+	/* The selected key itself must be complete and usable for verification. */
+	expect_error("{\"keys\":[{\"kid\":\"k\",\"alg\":\"RS256\",\"use\":\"sig\"}]}", "k",
+				 PG_OAUTH_ALGORITHM_RS256, PG_OAUTH_JWKS_INVALID_KEY,
+				 "key without a key type was accepted");
+	expect_error("{\"keys\":[{\"kty\":\"RSA\",\"kid\":\"k\",\"alg\":\"RS256\","
+				 "\"use\":\"sig\",\"n\":\"AQAB\"}]}", "k", PG_OAUTH_ALGORITHM_RS256,
+				 PG_OAUTH_JWKS_INVALID_KEY, "RSA key without an exponent was accepted");
+	expect_error("{\"keys\":[{\"kty\":\"EC\",\"crv\":\"P-256\",\"kid\":\"k\","
+				 "\"alg\":\"ES256\",\"use\":\"sig\","
+				 "\"x\":\"f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU\"}]}", "k",
+				 PG_OAUTH_ALGORITHM_ES256, PG_OAUTH_JWKS_INVALID_KEY,
+				 "EC key without a y coordinate was accepted");
+	expect_error("{\"keys\":[{\"kty\":\"oct\",\"kid\":\"k\",\"alg\":\"RS256\","
+				 "\"use\":\"sig\",\"k\":\"c2VjcmV0\"}]}", "k", PG_OAUTH_ALGORITHM_RS256,
+				 PG_OAUTH_JWKS_INVALID_KEY, "symmetric key was accepted as an RSA key");
+
 	return EXIT_SUCCESS;
 }

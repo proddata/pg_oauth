@@ -11,7 +11,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <jansson.h>
 #include <jwt.h>
+
+#include "base64url.h"
+
+/* Defensive bound; the envelope stage enforces the configured header limit. */
+#define PG_OAUTH_SIGNATURE_MAX_HEADER 8192
 
 static jwt_alg_t
 libjwt_algorithm(uint32_t algorithm)
@@ -23,6 +29,69 @@ libjwt_algorithm(uint32_t algorithm)
 	if (algorithm == PG_OAUTH_ALGORITHM_EDDSA)
 		return JWT_ALG_EDDSA;
 	return JWT_ALG_INVAL;
+}
+
+static const char *
+header_algorithm_name(uint32_t algorithm)
+{
+	if (algorithm == PG_OAUTH_ALGORITHM_RS256)
+		return "RS256";
+	if (algorithm == PG_OAUTH_ALGORITHM_ES256)
+		return "ES256";
+	if (algorithm == PG_OAUTH_ALGORITHM_EDDSA)
+		return "EdDSA";
+	return NULL;
+}
+
+/*
+ * libjwt 3.3.3 does not require the token header's algorithm to equal the
+ * checker's when the key itself names one, and verifies under the header's
+ * algorithm (jwt-verify.c, __verify_config_post). Earlier stages already bind
+ * the header to the key (jwt_envelope.c allowlist, jwks.c algorithm match), but
+ * this stage is the one that grants trust, so it enforces the same binding
+ * itself instead of relying on them or on libjwt.
+ */
+static bool
+header_algorithm_matches(const char *token, size_t token_length,
+						 uint32_t algorithm)
+{
+	const char *expected = header_algorithm_name(algorithm);
+	const char *dot = memchr(token, '.', token_length);
+	size_t		encoded_length;
+	size_t		decoded_length;
+	uint8_t    *decoded;
+	json_t	   *header;
+	json_t	   *name;
+	bool		matches;
+
+	if (expected == NULL || dot == NULL)
+		return false;
+	encoded_length = (size_t) (dot - token);
+	if (encoded_length == 0 || encoded_length > PG_OAUTH_SIGNATURE_MAX_HEADER ||
+		!pg_oauth_base64url_decoded_size(encoded_length,
+										 PG_OAUTH_SIGNATURE_MAX_HEADER,
+										 &decoded_length))
+		return false;
+	decoded = malloc(decoded_length + 1);
+	if (decoded == NULL)
+		return false;
+	if (!pg_oauth_base64url_decode(token, encoded_length, decoded,
+								   decoded_length))
+	{
+		free(decoded);
+		return false;
+	}
+	header = json_loadb((const char *) decoded, decoded_length,
+						JSON_REJECT_DUPLICATES, NULL);
+	free(decoded);
+	if (header == NULL)
+		return false;
+	name = json_object_get(header, "alg");
+	matches = json_is_string(name) &&
+		strcmp(json_string_value(name), expected) == 0 &&
+		json_string_length(name) == strlen(expected);
+	json_decref(header);
+	return matches;
 }
 
 PgOAuthSignatureError
@@ -45,6 +114,8 @@ pg_oauth_signature_verify(const char *token, size_t token_length,
 		return PG_OAUTH_SIGNATURE_INVALID_ARGUMENT;
 	if (memchr(token, '\0', token_length) != NULL || token_length == SIZE_MAX)
 		return PG_OAUTH_SIGNATURE_INVALID_ARGUMENT;
+	if (!header_algorithm_matches(token, token_length, selected_key->algorithm))
+		return PG_OAUTH_SIGNATURE_ALGORITHM_MISMATCH;
 
 	/* Serialize only the key already selected by the strict JWKS boundary. */
 	jwk_json = json_dumps(selected_key->jwk, JSON_COMPACT | JSON_SORT_KEYS);
@@ -58,6 +129,12 @@ pg_oauth_signature_verify(const char *token, size_t token_length,
 		goto done;
 	}
 	key = jwks_item_get(key_set, 0);
+	if (key == NULL || jwks_item_error(key) != 0)
+	{
+		/* libjwt keeps unusable keys in the set and flags them per item. */
+		result = PG_OAUTH_SIGNATURE_KEY_IMPORT_FAILED;
+		goto done;
+	}
 	checker = jwt_checker_new();
 
 	/*
@@ -98,7 +175,8 @@ pg_oauth_signature_error_code(PgOAuthSignatureError error)
 {
 	static const char *const codes[] = {
 		"ok", "invalid_argument", "key_serialization_failed",
-		"key_import_failed", "verifier_failed", "invalid_signature"
+		"key_import_failed", "verifier_failed", "invalid_signature",
+		"algorithm_mismatch"
 	};
 
 	if ((size_t) error >= sizeof(codes) / sizeof(codes[0]))
