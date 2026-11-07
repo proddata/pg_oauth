@@ -1,14 +1,22 @@
-# pg_oauth_validator
+# pg_oauth
 
 Authenticate PostgreSQL connections with signed OAuth 2.0 JWT access tokens
-from an explicitly trusted issuer. The validator discovers signing keys through
-OIDC, verifies the token and required database scopes, and returns a stable
-identity for PostgreSQL role mapping. Optional delegated role claims are also
-supported.
+from an explicitly trusted issuer. Tokens are validated offline: signing keys
+are discovered through OIDC, the token and the required database scopes are
+verified, and a stable identity is returned for PostgreSQL role mapping.
+Optional delegated role claims are also supported.
 
-PostgreSQL 18 is the stable target; PostgreSQL 19 support is preview-only.
-Build a separate module for each major version. The project is prerelease
-software; passing tests alone does not establish production readiness.
+This repository provides two independent modules built on one shared
+validation core (see [Architecture](docs/architecture.md#source-layout)):
+
+| Module | PostgreSQL | Status |
+| --- | --- | --- |
+| `pg_oauth_validator`: native OAuth validator | 18 (stable), 19 (preview) | prerelease |
+| `pg_oauth_pam`: PAM token authentication, see the [PAM guide](docs/pam.md) | 15 to 19 | experimental |
+
+Either module works without the other. Build a separate module for each
+PostgreSQL major version. The project is prerelease software; passing tests
+alone does not establish production readiness.
 
 The default accepts `at+jwt` and `application/at+jwt` access tokens. OIDC ID
 tokens and opaque tokens are not database credentials. A missing `typ` requires
@@ -110,7 +118,7 @@ upgrades and rollback.
 | Demo and external issuer setup | [Tutorial](demo/README.md) |
 | Tested issuers and limitations | [Provider compatibility](PROVIDER-COMPATIBILITY.md) |
 | Product and security contract | [Features](FEATURES.md) |
-| Implementation and design rationale | [Architecture](docs/architecture.md), [ADRs](docs/adr/) |
+| Implementation, source layout and design rationale | [Architecture](docs/architecture.md), [ADRs](docs/adr/) |
 | Build and test commands | [Development](docs/development.md) |
 | Packaging and publication | [Release checklist](docs/release-readiness.md), [experimental RPMs](docs/rpm-platforms.md) |
 
