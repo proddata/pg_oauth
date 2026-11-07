@@ -4,6 +4,7 @@ HBA routes each role to exactly one method. The two modules must not depend on
 or disturb each other: configuration, files and failures stay independent.
 """
 
+import contextlib
 import os
 import pathlib
 import shutil
@@ -21,8 +22,9 @@ from integration_support import (AUDIENCE, SCOPE, LocalIdp, TemporaryPostgres,
 from test_pam_module import Libpq, require_disposable
 
 
-@pytest.fixture(scope="module")
-def environment():
+@contextlib.contextmanager
+def both_environment(extra_config="", cache_max_age=60):
+    """One cluster with both modules; `extra_config` adds postgresql.conf lines."""
     require_disposable()
     pg_config = os.environ["PG_CONFIG"]
     validator_library = pathlib.Path(os.environ["VALIDATOR_LIBRARY"]).resolve()
@@ -30,13 +32,13 @@ def environment():
     module = pathlib.Path(os.environ["PAM_MODULE"]).resolve()
     previous_ca = os.environ.get("SSL_CERT_FILE")
     with tempfile.TemporaryDirectory(prefix="pg-oauth-both-") as directory:
-        idp = LocalIdp(pathlib.Path(directory), cache_max_age=60)
+        idp = LocalIdp(pathlib.Path(directory), cache_max_age=cache_max_age)
         os.environ["SSL_CERT_FILE"] = str(idp.tls_certificate)
         service = "pg-oauth-both-" + uuid.uuid4().hex
         service_file = pathlib.Path("/etc/pam.d") / service
         cluster = TemporaryPostgres(
             pg_config, validator_library, issuer=idp.issuer,
-            ca_file=idp.tls_certificate,
+            ca_file=idp.tls_certificate, extra_config=extra_config,
             server_certificate=idp.tls_certificate, server_key=idp.tls_key,
             hba_lines=(
                 "local all all trust\n"
@@ -64,6 +66,12 @@ def environment():
                 os.environ.pop("SSL_CERT_FILE", None)
             else:
                 os.environ["SSL_CERT_FILE"] = previous_ca
+
+
+@pytest.fixture(scope="module")
+def environment():
+    with both_environment() as shared:
+        yield shared
 
 
 def oauth_login(environment, idp_token, user="oauthuser"):
@@ -145,3 +153,56 @@ def test_removing_either_module_leaves_the_other_working(environment):
         hidden.rename(validator_library)
     assert oauth_login(environment, idp.sign(subject="oauthuser"))
     assert pam_login(environment, idp.sign(subject="pamuser"))
+
+
+@pytest.mark.parametrize("filled", ["pam", "oauth"])
+def test_a_full_cache_in_one_module_does_not_affect_the_other(filled):
+    """ADR 0009: the two modules share no segment, lock or capacity.
+
+    Both caches are set to the minimum of eight entries. One module's cache is
+    filled until it denies a new policy, which proves it is really full. The
+    other module must still serve its warm entry without a provider request and
+    must still be able to cache new policies."""
+    capacity = "pg_oauth_validator.cache_max_entries = 8\npg_oauth_pam.cache_max_entries = 8\n"
+    with both_environment(capacity, cache_max_age=3600) as environment:
+        cluster, _, _, idp, service_file, *_ = environment
+        original = service_file.read_text()
+        # A policy generation caches metadata and key set: two of the eight entries.
+        generations = 4
+
+        def pam_with(variant):
+            """Log in under a PAM policy that differs from the others by one argument."""
+            if variant:
+                service_file.write_text("".join(
+                    f"{line} clock_skew_ms={60000 + variant}\n"
+                    for line in original.splitlines()))
+            else:
+                service_file.write_text(original)
+            return pam_login(environment, idp.sign(subject="pamuser"))
+
+        def oauth_generation(number):
+            """Log in after changing a setting that is part of the OAuth cache key."""
+            reload_setting(cluster, "pg_oauth_validator.cache_min_ttl", f"{number}s")
+            return oauth_login(environment, idp.sign(subject="oauthuser"))
+
+        assert pam_with(0) and oauth_login(environment, idp.sign(subject="oauthuser"))
+
+        if filled == "pam":
+            for variant in range(1, generations):
+                assert pam_with(variant), f"PAM policy {variant} was denied before the cache was full"
+            assert not pam_with(generations), "the PAM cache never filled"
+            before = idp.request_counts()
+            assert pam_with(0), "a warm PAM entry was lost"
+            assert oauth_login(environment, idp.sign(subject="oauthuser")), "the warm OAuth entry was lost"
+            assert idp.request_counts() == before, "a warm entry needed a provider request"
+            for number in range(1, generations):
+                assert oauth_generation(number), f"OAuth could not cache policy {number}"
+        else:
+            for number in range(1, generations):
+                assert oauth_generation(number), f"OAuth policy {number} was denied before the cache was full"
+            assert not oauth_generation(generations), "the OAuth cache never filled"
+            before = idp.request_counts()
+            assert pam_with(0), "a warm PAM entry was lost"
+            assert idp.request_counts() == before, "a warm entry needed a provider request"
+            for variant in range(1, generations):
+                assert pam_with(variant), f"PAM could not cache policy {variant}"
