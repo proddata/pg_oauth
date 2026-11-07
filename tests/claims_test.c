@@ -431,7 +431,11 @@ main(void)
 	"\"sub\":\"p\",\"scope\":\"connect:postgres read:metadata\"," extra "}"
 	expect_error(CLAIMS("\"exp\":\"1100\""), &policy,
 				 PG_OAUTH_CLAIMS_INVALID_EXPIRY, "string expiry was accepted");
-	/* RFC 7519 allows non-integer NumericDate values; this validator does not. */
+
+	/*
+	 * RFC 7519 allows non-integer NumericDate values; this validator does
+	 * not.
+	 */
 	expect_error(CLAIMS("\"exp\":1.1e3"), &policy,
 				 PG_OAUTH_CLAIMS_INVALID_EXPIRY, "exponent-form expiry was accepted");
 	expect_error(CLAIMS("\"exp\":1100,\"nbf\":900.5"), &policy,
