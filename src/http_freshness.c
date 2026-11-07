@@ -16,7 +16,14 @@ typedef struct CacheControlValues
 	bool		no_store;
 	bool		no_cache;
 	bool		must_revalidate;
+	bool		malformed;
 } CacheControlValues;
+
+/*
+ * RFC 9111 section 1.2.2: a delta-seconds value above what a cache can
+ * represent is treated as 2^31 seconds, not as an error.
+ */
+#define DELTA_SECONDS_LIMIT INT64_C(2147483648)
 
 static void
 trim(const char **start, const char **end)
@@ -36,14 +43,12 @@ decimal		(const char *start, const char *end, int64_t *value)
 		return false;
 	for (const char *cursor = start; cursor < end; cursor++)
 	{
-		int			digit;
-
 		if (*cursor < '0' || *cursor > '9')
 			return false;
-		digit = *cursor - '0';
-		if (parsed > (INT64_MAX - digit) / 10)
-			return false;
-		parsed = parsed * 10 + digit;
+		if (parsed < DELTA_SECONDS_LIMIT)
+			parsed = parsed * 10 + (*cursor - '0');
+		if (parsed > DELTA_SECONDS_LIMIT)
+			parsed = DELTA_SECONDS_LIMIT;
 	}
 	*value = parsed;
 	return true;
@@ -57,86 +62,102 @@ directive_name(const char *start, const char *end, const char *name)
 	return strlen(name) == length && strncasecmp(start, name, length) == 0;
 }
 
+/*
+ * Interpret one list element. Returns false when the element is malformed;
+ * the caller keeps scanning so a later no-store or no-cache is still honored.
+ */
 static bool
+parse_directive(const char *entry, const char *item_end,
+				CacheControlValues *parsed)
+{
+	const char *equals;
+	const char *name_end;
+
+	for (const char *cursor = entry; cursor < item_end; cursor++)
+	{
+		unsigned char byte = (unsigned char) *cursor;
+
+		if (byte < 0x20 || byte >= 0x7f)
+			return false;
+	}
+	equals = memchr(entry, '=', (size_t) (item_end - entry));
+	name_end = equals != NULL ? equals : item_end;
+	while (name_end > entry &&
+		   (name_end[-1] == ' ' || name_end[-1] == '\t'))
+		name_end--;
+	if (name_end == entry)
+		return false;
+
+	if (directive_name(entry, name_end, "no-store"))
+	{
+		/* An argument is invalid, but never lets the response be stored. */
+		parsed->no_store = true;
+		return equals == NULL;
+	}
+	if (directive_name(entry, name_end, "no-cache"))
+	{
+		/*
+		 * Field-name arguments are irrelevant to this whole-response cache.
+		 */
+		parsed->no_cache = true;
+		return true;
+	}
+	if (directive_name(entry, name_end, "must-revalidate"))
+	{
+		parsed->must_revalidate = true;
+		return equals == NULL;
+	}
+	if (directive_name(entry, name_end, "max-age"))
+	{
+		const char *number_start;
+		const char *number_end;
+
+		/* RFC 9111 section 4.2.1: duplicates make the response stale. */
+		if (parsed->has_max_age)
+			return false;
+		parsed->has_max_age = true;
+		if (equals == NULL)
+			return false;
+		number_start = equals + 1;
+		number_end = item_end;
+		trim(&number_start, &number_end);
+		if (number_end - number_start >= 2 && number_start[0] == '"' &&
+			number_end[-1] == '"')
+		{
+			number_start++;
+			number_end--;
+		}
+		return decimal (number_start, number_end, &parsed->max_age_seconds);
+	}
+	return true;
+}
+
+/*
+ * Sets parsed->malformed instead of failing: ADR 0002 treats unusable
+ * freshness as immediately stale, never as a reason to deny the login.
+ * Empty list elements are ignored (RFC 9110 section 5.6.1.2).
+ */
+static void
 parse_cache_control(const char *value, CacheControlValues *parsed)
 {
 	const char *entry;
 
 	memset(parsed, 0, sizeof(*parsed));
 	if (value == NULL || value[0] == '\0')
-		return true;
+		return;
 	entry = value;
 	while (*entry != '\0')
 	{
 		const char *end = strchr(entry, ',');
 		const char *item_end = end != NULL ? end : entry + strlen(entry);
-		const char *equals;
-		const char *name_end;
 
 		trim(&entry, &item_end);
-		if (entry == item_end)
-			return false;
-		for (const char *cursor = entry; cursor < item_end; cursor++)
-		{
-			unsigned char byte = (unsigned char) *cursor;
-
-			if (byte < 0x20 || byte >= 0x7f)
-				return false;
-		}
-		equals = memchr(entry, '=', (size_t) (item_end - entry));
-		name_end = equals != NULL ? equals : item_end;
-		while (name_end > entry &&
-			   (name_end[-1] == ' ' || name_end[-1] == '\t'))
-			name_end--;
-		if (name_end == entry)
-			return false;
-
-		if (directive_name(entry, name_end, "no-store"))
-		{
-			if (equals != NULL)
-				return false;
-			parsed->no_store = true;
-		}
-		else if (directive_name(entry, name_end, "no-cache"))
-		{
-			/*
-			 * Field-name arguments are irrelevant to this whole-response
-			 * cache.
-			 */
-			parsed->no_cache = true;
-		}
-		else if (directive_name(entry, name_end, "must-revalidate"))
-		{
-			if (equals != NULL)
-				return false;
-			parsed->must_revalidate = true;
-		}
-		else if (directive_name(entry, name_end, "max-age"))
-		{
-			const char *number_start;
-			const char *number_end;
-
-			if (parsed->has_max_age || equals == NULL)
-				return false;
-			number_start = equals + 1;
-			number_end = item_end;
-			trim(&number_start, &number_end);
-			if (number_end - number_start >= 2 && number_start[0] == '"' &&
-				number_end[-1] == '"')
-			{
-				number_start++;
-				number_end--;
-			}
-			if (!decimal(number_start, number_end, &parsed->max_age_seconds))
-				return false;
-			parsed->has_max_age = true;
-		}
-
+		if (entry != item_end && !parse_directive(entry, item_end, parsed))
+			parsed->malformed = true;
 		if (end == NULL)
 			break;
 		entry = end + 1;
 	}
-	return true;
 }
 
 static bool
@@ -181,12 +202,22 @@ pg_oauth_http_freshness_calculate(const char *cache_control, const char *date,
 		policy->default_ttl_ms < 0 || policy->maximum_ttl_ms < 0 ||
 		policy->default_ttl_ms > policy->maximum_ttl_ms)
 		return PG_OAUTH_HTTP_FRESHNESS_INVALID_ARGUMENT;
-	if (!parse_cache_control(cache_control, &control) ||
-		!parse_age(age, &age_seconds))
-		return PG_OAUTH_HTTP_FRESHNESS_INVALID_HEADER;
+	parse_cache_control(cache_control, &control);
+	if (!parse_age(age, &age_seconds))
+		control.malformed = true;
 
 	result->cacheable = !control.no_store;
 	result->revalidation_required = control.no_cache || control.must_revalidate;
+	if (control.malformed)
+	{
+		/*
+		 * Conflicting or unparsable directives: the response may serve the
+		 * request that fetched it but is not reusable without revalidation.
+		 */
+		result->revalidation_required = true;
+		result->explicit_freshness = true;
+		return PG_OAUTH_HTTP_FRESHNESS_OK;
+	}
 	if (control.has_max_age)
 	{
 		freshness_seconds = control.max_age_seconds;
@@ -196,11 +227,16 @@ pg_oauth_http_freshness_calculate(const char *cache_control, const char *date,
 	{
 		time_t		expires_at = curl_getdate(expires, NULL);
 		time_t		date_at = date != NULL && date[0] != '\0' ?
-			curl_getdate(date, NULL) : (time_t) response_time_seconds;
+			curl_getdate(date, NULL) : (time_t) -1;
 
-		if (expires_at == (time_t) -1 || date_at == (time_t) -1)
-			return PG_OAUTH_HTTP_FRESHNESS_INVALID_HEADER;
-		if (expires_at > date_at)
+		/*
+		 * RFC 9111 section 5.3: an invalid Expires, "0" included, means a
+		 * time in the past. An invalid Date is ignored in favor of the time
+		 * this validator received the response.
+		 */
+		if (date_at == (time_t) -1)
+			date_at = (time_t) response_time_seconds;
+		if (expires_at != (time_t) -1 && expires_at > date_at)
 			freshness_seconds = (int64_t) (expires_at - date_at);
 		explicit_freshness = true;
 	}
@@ -214,9 +250,8 @@ pg_oauth_http_freshness_calculate(const char *cache_control, const char *date,
 		{
 			time_t		date_at = curl_getdate(date, NULL);
 
-			if (date_at == (time_t) -1)
-				return PG_OAUTH_HTTP_FRESHNESS_INVALID_HEADER;
-			if (response_time_seconds > (int64_t) date_at &&
+			if (date_at != (time_t) -1 &&
+				response_time_seconds > (int64_t) date_at &&
 				response_time_seconds - (int64_t) date_at > apparent_age)
 				apparent_age = response_time_seconds - (int64_t) date_at;
 		}
@@ -245,8 +280,6 @@ pg_oauth_http_freshness_error_code(PgOAuthHttpFreshnessError error)
 			return "http_freshness_ok";
 		case PG_OAUTH_HTTP_FRESHNESS_INVALID_ARGUMENT:
 			return "http_freshness_invalid_argument";
-		case PG_OAUTH_HTTP_FRESHNESS_INVALID_HEADER:
-			return "http_freshness_invalid_header";
 	}
 	return "http_freshness_unknown_error";
 }

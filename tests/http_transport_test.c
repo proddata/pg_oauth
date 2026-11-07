@@ -111,6 +111,19 @@ main(int argc, char **argv)
 	snprintf(url, sizeof(url), "%s/large-freshness-header", argv[1]);
 	expect(url, &policy, PG_OAUTH_HTTP_RESPONSE_TOO_LARGE,
 		   "oversized freshness header was accepted");
+	snprintf(url, sizeof(url), "%s/underflow-freshness-header", argv[1]);
+	expect(url, &policy, PG_OAUTH_HTTP_RESPONSE_TOO_LARGE,
+		   "freshness header limit was bypassed by a second value");
+	snprintf(url, sizeof(url), "%s/interim-freshness-header", argv[1]);
+	if (pg_oauth_http_get_json(url, &policy, &response) != PG_OAUTH_HTTP_OK ||
+		response.cache_control != NULL || response.age != NULL)
+		fail("interim response headers were merged into the final response");
+	pg_oauth_http_response_clear(&response);
+	snprintf(url, sizeof(url), "%s/trailer-freshness-header", argv[1]);
+	if (pg_oauth_http_get_json(url, &policy, &response) != PG_OAUTH_HTTP_OK ||
+		response.cache_control != NULL)
+		fail("trailer fields were merged into the response headers");
+	pg_oauth_http_response_clear(&response);
 	snprintf(url, sizeof(url), "%s/jwks", argv[1]);
 	if (pg_oauth_http_get_json(url, &policy, &response) != PG_OAUTH_HTTP_OK)
 		fail("standards JWKS media type was rejected");

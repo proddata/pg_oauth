@@ -19,6 +19,7 @@ typedef struct ResponseBuffer
 typedef struct HeaderBuffer
 {
 	PgOAuthHttpResponse *response;
+	const ResponseBuffer *body;
 	bool		too_large;
 	bool		out_of_memory;
 } HeaderBuffer;
@@ -63,7 +64,12 @@ append_header_value(char **target, const char *value, size_t length)
 	size_t		separator = current > 0 ? 1 : 0;
 	char	   *resized;
 
-	if (length > PG_OAUTH_MAX_FRESHNESS_HEADER_SIZE - current - separator)
+	/*
+	 * Check the sum first: with current at the limit, subtracting the
+	 * separator from the remaining room would wrap around.
+	 */
+	if (current + separator > PG_OAUTH_MAX_FRESHNESS_HEADER_SIZE ||
+		length > PG_OAUTH_MAX_FRESHNESS_HEADER_SIZE - current - separator)
 		return false;
 	resized = realloc(*target, current + separator + length + 1);
 	if (resized == NULL)
@@ -92,6 +98,32 @@ capture_header(char *contents, size_t size, size_t count, void *user_data)
 		return 0;
 	}
 	bytes = size * count;
+
+	/*
+	 * A status line starts a new response. libcurl reports each interim (1xx)
+	 * response's header block before the final one, and RFC 9110 section 15.2
+	 * says only the final response describes the representation, so earlier
+	 * freshness fields are discarded.
+	 */
+	if (bytes >= 5 && strncasecmp(contents, "HTTP/", 5) == 0)
+	{
+		free(headers->response->cache_control);
+		free(headers->response->date);
+		free(headers->response->expires);
+		free(headers->response->age);
+		headers->response->cache_control = NULL;
+		headers->response->date = NULL;
+		headers->response->expires = NULL;
+		headers->response->age = NULL;
+		return bytes;
+	}
+
+	/*
+	 * Fields after the body are trailers (RFC 9110 section 6.5.1): they must
+	 * not influence caching decisions made from the header section.
+	 */
+	if (headers->body != NULL && headers->body->length != 0)
+		return bytes;
 	colon = memchr(contents, ':', bytes);
 	if (colon == NULL)
 		return bytes;
@@ -340,7 +372,8 @@ pg_oauth_http_get_json(const char *url, const PgOAuthHttpPolicy *policy,
 	memset(response, 0, sizeof(*response));
 	header_buffer = (HeaderBuffer)
 	{
-		.response = response
+		.response = response,
+			.body = &buffer
 	};
 	if (url == NULL || policy == NULL || policy->max_url_size == 0 ||
 		policy->max_response_size == 0 || policy->allowed_host == NULL ||

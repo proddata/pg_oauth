@@ -63,9 +63,23 @@ PostgreSQL 19 rejects other `validator.policy` values.
 ## Metadata and JWKS cache
 
 `metadata_default_ttl` and `jwks_default_ttl` apply only when a successful
-provider response has no usable explicit freshness. `cache_max_ttl` caps both
-fallback and provider-advertised freshness. The accepted ranges are 1 second
-to 1 hour for each fallback and 1 second to 24 hours for the maximum.
+provider response carries no explicit freshness (`Cache-Control: max-age` or
+`Expires`). `cache_max_ttl` caps both fallback and provider-advertised
+freshness. The accepted ranges are 1 second to 1 hour for each fallback and
+1 second to 24 hours for the maximum.
+
+Freshness headers that are present but unusable never deny authentication and
+never extend freshness. Duplicate or malformed `max-age`, malformed `Age`, an
+invalid `Expires` (including `0`) or a malformed argument to `no-store` or
+`must-revalidate` make the response immediately stale: it serves the
+authentication that fetched it and is refetched by the next one. `no-store`
+is honored even beside a malformed directive. Empty list elements such as a
+trailing comma are ignored, an invalid `Date` is replaced by the local receive
+time, and a delta-seconds value too large to represent is treated as 2^31
+seconds and then capped by `cache_max_ttl` (RFC 9111 sections 1.2.2, 4.2.1
+and 5.3; RFC 9110 section 5.6.1.2). Headers from interim (1xx) responses and
+trailer fields are ignored, and each freshness header is limited to 4096 bytes
+in total.
 
 `jwks_stale_grace` is an explicit outage-availability tradeoff from zero to one
 hour. Its default of zero rejects authentication after JWKS freshness expires.
