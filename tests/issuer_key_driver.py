@@ -18,6 +18,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
     cache_metadata_requests = 0
     cache_jwks_requests = 0
     flaky_jwks_requests = 0
+    flood_metadata_requests = 0
+    flood_jwks_requests = 0
+    bad_jwks_requests = 0
+    private_jwks_requests = 0
     protocol_version = "HTTP/1.0"
 
     def do_GET(self):
@@ -37,6 +41,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             port = self.server.server_port
             value = {"issuer": self.issuer,
                      "jwks_uri": f"http://127.0.0.1:{port}/jwks"}
+        elif self.path == "/metadata-flood":
+            Handler.flood_metadata_requests += 1
+            value = {"issuer": self.issuer,
+                     "jwks_uri": self.issuer + "/jwks-flood"}
+        elif self.path == "/metadata-bad-cached":
+            value = {"issuer": self.issuer,
+                     "jwks_uri": self.issuer + "/jwks-bad-cached"}
+        elif self.path == "/metadata-private-jwks":
+            value = {"issuer": self.issuer,
+                     "jwks_uri": self.issuer + "/jwks-private"}
         elif self.path == "/metadata-bad-jwks":
             value = {"issuer": self.issuer,
                      "jwks_uri": self.issuer + "/bad-jwks"}
@@ -53,6 +67,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif self.path == "/bad-jwks":
             self.respond(b"not-json", "application/jwk-set+json")
             return
+        elif self.path == "/jwks-bad-cached":
+            Handler.bad_jwks_requests += 1
+            self.respond(b"not-json", "application/jwk-set+json")
+            return
+        elif self.path == "/jwks-private":
+            # A well-formed document whose key carries private material must
+            # be refused and never retained.
+            Handler.private_jwks_requests += 1
+            modulus = bytes([0x80]) + bytes([0xA5]) * 255
+            value = {"keys": [{"kty": "RSA", "n": base64url(modulus),
+                                "e": "AQAB", "d": base64url(modulus),
+                                "kid": "test-key", "alg": "RS256",
+                                "use": "sig"}]}
         elif self.path == "/jwks-flaky":
             Handler.flaky_jwks_requests += 1
             Handler.jwks_requests += 1
@@ -67,10 +94,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             value = {"keys": [{"kty": "RSA", "n": base64url(modulus),
                                 "e": "AQAB", "kid": "test-key",
                                 "alg": "RS256", "use": "sig"}]}
-        elif self.path in ("/jwks", "/jwks-cache"):
+        elif self.path in ("/jwks", "/jwks-cache", "/jwks-flood"):
+            if self.path == "/jwks-flood":
+                Handler.flood_jwks_requests += 1
+            else:
+                Handler.jwks_requests += 1
             if self.path == "/jwks-cache":
                 Handler.cache_jwks_requests += 1
-            Handler.jwks_requests += 1
             modulus = bytes([0x80]) + bytes([0xA5]) * 255
             value = {"keys": [{"kty": "RSA", "n": base64url(modulus),
                                 "e": "AQAB", "kid": "test-key",
@@ -108,6 +138,15 @@ def main():
             raise RuntimeError("fresh cache hit or policy separation was incorrect")
         if Handler.flaky_jwks_requests != 2:
             raise RuntimeError("stale JWKS outage path did not attempt one refresh")
+        # Cold-cache unknown-key flood: one fetch publishes the document and one
+        # more starts the cooldown; the rest are suppressed. A known key with
+        # the wrong algorithm publishes too.
+        if Handler.flood_jwks_requests != 3 or Handler.flood_metadata_requests != 2:
+            raise RuntimeError("a well-formed JWKS without the requested key was "
+                               "not published, or the flood was not suppressed")
+        # Documents that fail validation must never be cached.
+        if Handler.bad_jwks_requests != 2 or Handler.private_jwks_requests != 2:
+            raise RuntimeError("an invalid JWKS was cached")
     finally:
         server.shutdown()
         thread.join()

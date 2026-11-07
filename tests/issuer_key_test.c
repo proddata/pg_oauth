@@ -283,6 +283,88 @@ main(int argc, char **argv)
 		fail("unknown key identifier was accepted or retried");
 	pg_oauth_issuer_key_result_clear(&result);
 
+	/*
+	 * Cold cache, unknown key identifiers. The first fetch publishes the
+	 * well-formed document even though it lacks the key, one more refresh
+	 * starts the cooldown, and everything after that is suppressed without a
+	 * request (the mock server counts them).
+	 */
+	selected_cache_policy = cache_policy(&local_cache, &cache_io);
+	make_url(url, sizeof(url), argv[1], "/metadata-flood");
+	for (int attempt = 0; attempt < 4; attempt++)
+	{
+		char		key_id[32];
+
+		snprintf(key_id, sizeof(key_id), "unknown-%d", attempt);
+		error = pg_oauth_issuer_key_fetch_cached(url, argv[1], key_id,
+												 PG_OAUTH_ALGORITHM_RS256, &selected_policy,
+												 &selected_cache_policy, 1000 + attempt, 1, &result);
+		if (attempt < 2 && (error != PG_OAUTH_ISSUER_KEY_JWKS_INVALID ||
+							result.jwks_error != PG_OAUTH_JWKS_KEY_NOT_FOUND))
+			fail("cold unknown key was not denied as not found");
+		if (attempt >= 2 && error != PG_OAUTH_ISSUER_KEY_CACHE)
+			fail("unknown-key flood was not suppressed by the cooldown");
+		pg_oauth_issuer_key_result_clear(&result);
+	}
+	error = pg_oauth_issuer_key_fetch_cached(url, argv[1], "test-key",
+											 PG_OAUTH_ALGORITHM_RS256, &selected_policy, &selected_cache_policy,
+											 1010, 1, &result);
+	if (error != PG_OAUTH_ISSUER_KEY_OK || result.selected.jwk == NULL)
+		fail("valid key was not served from the document published by a denied token");
+	pg_oauth_issuer_key_result_clear(&result);
+
+	/*
+	 * A real key identifier with the wrong algorithm must publish as well.
+	 * The policy has to allow both algorithms, otherwise selection rejects
+	 * the token's algorithm as an invalid argument before it looks at any
+	 * key.
+	 */
+	selected_cache_policy = cache_policy(&local_cache, &cache_io);
+	selected_policy.jwks.allowed_algorithms =
+		PG_OAUTH_ALGORITHM_RS256 | PG_OAUTH_ALGORITHM_ES256;
+	selected_cache_policy.key_policy.allowed_algorithms =
+		PG_OAUTH_ALGORITHM_RS256 | PG_OAUTH_ALGORITHM_ES256;
+	error = pg_oauth_issuer_key_fetch_cached(url, argv[1], "test-key",
+											 PG_OAUTH_ALGORITHM_ES256, &selected_policy, &selected_cache_policy,
+											 1000, 1, &result);
+	if (error != PG_OAUTH_ISSUER_KEY_JWKS_INVALID ||
+		result.jwks_error != PG_OAUTH_JWKS_ALGORITHM_MISMATCH)
+		fail("cold algorithm mismatch was not denied precisely");
+	pg_oauth_issuer_key_result_clear(&result);
+	error = pg_oauth_issuer_key_fetch_cached(url, argv[1], "test-key",
+											 PG_OAUTH_ALGORITHM_RS256, &selected_policy, &selected_cache_policy,
+											 1001, 1, &result);
+	if (error != PG_OAUTH_ISSUER_KEY_OK)
+		fail("valid key was not served after an algorithm-mismatch denial");
+	pg_oauth_issuer_key_result_clear(&result);
+	selected_policy.jwks.allowed_algorithms = PG_OAUTH_ALGORITHM_RS256;
+
+	/* Documents that fail validation are never retained: each call refetches. */
+	selected_cache_policy = cache_policy(&local_cache, &cache_io);
+	make_url(url, sizeof(url), argv[1], "/metadata-bad-cached");
+	for (int attempt = 0; attempt < 2; attempt++)
+	{
+		error = pg_oauth_issuer_key_fetch_cached(url, argv[1], "test-key",
+												 PG_OAUTH_ALGORITHM_RS256, &selected_policy,
+												 &selected_cache_policy, 1000 + attempt, 1, &result);
+		if (error != PG_OAUTH_ISSUER_KEY_JWKS_INVALID ||
+			result.jwks_error != PG_OAUTH_JWKS_INVALID_JSON)
+			fail("malformed JWKS was not rejected when cached lookups are enabled");
+		pg_oauth_issuer_key_result_clear(&result);
+	}
+	selected_cache_policy = cache_policy(&local_cache, &cache_io);
+	make_url(url, sizeof(url), argv[1], "/metadata-private-jwks");
+	for (int attempt = 0; attempt < 2; attempt++)
+	{
+		error = pg_oauth_issuer_key_fetch_cached(url, argv[1], "test-key",
+												 PG_OAUTH_ALGORITHM_RS256, &selected_policy,
+												 &selected_cache_policy, 1000 + attempt, 1, &result);
+		if (error != PG_OAUTH_ISSUER_KEY_JWKS_INVALID ||
+			result.jwks_error != PG_OAUTH_JWKS_INVALID_KEY)
+			fail("JWKS with private key material was not rejected");
+		pg_oauth_issuer_key_result_clear(&result);
+	}
+
 	if (strstr(pg_oauth_issuer_key_error_code(
 											  PG_OAUTH_ISSUER_KEY_JWKS_INVALID), "test-key") != NULL)
 		fail("stable pipeline error exposed key input");

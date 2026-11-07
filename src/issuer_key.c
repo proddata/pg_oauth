@@ -64,6 +64,21 @@ complete_response(const PgOAuthIssuerKeyCachePolicy *policy,
 										response->body_length);
 }
 
+/*
+ * Selection outcomes that say only "this token cannot use this document":
+ * the whole document was parsed and bounded successfully (selection validates
+ * the document before it looks at any key), and the failure concerns the
+ * requested key identifier or its algorithm. Errors about the document itself
+ * or about the key's contents are excluded.
+ */
+static bool
+jwks_error_leaves_document_usable(PgOAuthJwksError error)
+{
+	return error == PG_OAUTH_JWKS_KEY_NOT_FOUND ||
+		error == PG_OAUTH_JWKS_ALGORITHM_MISMATCH ||
+		error == PG_OAUTH_JWKS_KEY_NOT_FOR_SIGNATURE;
+}
+
 PgOAuthIssuerKeyError
 pg_oauth_issuer_key_fetch_cached(const char *metadata_url,
 								 const char *expected_issuer, const char *key_id,
@@ -346,8 +361,27 @@ pg_oauth_issuer_key_fetch_cached(const char *metadata_url,
 	if (result->jwks_error != PG_OAUTH_JWKS_OK)
 	{
 		if (use_cache)
-			(void) cache_policy->io->complete_refresh(cache_policy->io->context,
-													  &refresh, cache_now_ms, false, false, false, 0, 0, NULL, 0);
+		{
+			/*
+			 * A document that is well-formed but cannot serve this token's
+			 * key is still the provider's current key set. Discarding it
+			 * would leave the cache empty, so the unknown-key cooldown could
+			 * never apply and every hostile token would cost two provider
+			 * requests. Publishing is safe: cached bytes are parsed and
+			 * checked again on every lookup, and this token is denied either
+			 * way. Anything else (malformed document, private key material)
+			 * is never retained.
+			 */
+			if (jwks_error_leaves_document_usable(result->jwks_error))
+				(void) complete_response(cache_policy, &refresh, cache_now_ms,
+										 response_time_seconds,
+										 &cache_policy->jwks_freshness,
+										 cache_policy->jwks_stale_grace_ms,
+										 &jwks_response);
+			else
+				(void) cache_policy->io->complete_refresh(cache_policy->io->context,
+														  &refresh, cache_now_ms, false, false, false, 0, 0, NULL, 0);
+		}
 		error = PG_OAUTH_ISSUER_KEY_JWKS_INVALID;
 		goto done;
 	}
