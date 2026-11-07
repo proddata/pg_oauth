@@ -46,6 +46,10 @@ See [`ADR 0003`](adr/0003-eddsa-ed25519-support.md).
 `allowed_token_types` is a nonempty, comma-separated allowlist containing only
 `at+jwt` and `application/at+jwt`. Both spellings are allowed by RFC 9068 and
 both are accepted by default. Duplicate, empty, and other entries fail closed.
+The token's `typ` is compared ignoring ASCII case, as RFC 7515 section 4.1.9
+requires for media types (RFC 9068's own example is `at+JWT`); the allowlist
+still decides which spelling is accepted, so `at+jwt` alone rejects
+`application/at+jwt`. Whitespace and non-ASCII look-alikes never match.
 `allow_missing_token_type` defaults to `off`. When enabled, an absent `typ`
 is accepted, but a present type must still be in the allowlist. This is a
 provider-compatibility exception, not RFC 9068 validation. Enable it only when
@@ -206,6 +210,23 @@ metadata requires an exception.
 This transport restriction works the same way on PostgreSQL 18 and 19 and is
 independent of PostgreSQL 19's `validator.policy` selector. HTTP redirects are
 not followed.
+
+Metadata and JWKS are accepted only from a `200` response (RFC 8414 section 3.2,
+RFC 7517 section 5). Other `2xx` statuses such as `203`, `204` and `206` can
+carry no body or a partial or transformed one, and are treated as failures.
+
+### JWKS limits and unusable entries
+
+A key set is limited to 64 KiB, 16 keys and 1024-byte `kid` values; a larger
+set is rejected as a whole, which keeps work per refresh bounded. Within those
+limits, members that cannot identify a key are ignored (RFC 7517 section 5):
+entries that are not JSON objects, and entries whose `kid` is missing or is not
+a usable string. Such an entry can never match a token, so ignoring it cannot
+admit a key. Duplicate usable `kid` values, an empty `keys` array, and a
+selected key that is malformed, private, or unsuitable for signature
+verification still deny the token that selects it.
+Issuers whose key set exceeds 16 keys must reduce it; the limit is not
+configurable.
 
 `ca_file` optionally selects a PEM CA bundle for metadata and JWKS HTTPS. An
 empty value uses the system trust store. `allow_insecure_http` exists only for

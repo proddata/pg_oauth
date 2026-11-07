@@ -143,6 +143,16 @@ main(int argc, char **argv)
 	snprintf(url, sizeof(url), "%s/text", argv[1]);
 	expect(url, &policy, PG_OAUTH_HTTP_CONTENT_TYPE,
 		   "non-JSON content type was accepted");
+	{
+		static const char *const statuses[] = {"201", "203", "204", "206"};
+
+		for (size_t i = 0; i < sizeof(statuses) / sizeof(statuses[0]); i++)
+		{
+			snprintf(url, sizeof(url), "%s/status-%s", argv[1], statuses[i]);
+			expect(url, &policy, PG_OAUTH_HTTP_STATUS,
+				   "a 2xx response other than 200 was accepted");
+		}
+	}
 	snprintf(url, sizeof(url), "%s/error", argv[1]);
 	expect(url, &policy, PG_OAUTH_HTTP_STATUS, "HTTP error status was accepted");
 	snprintf(url, sizeof(url), "%s/slow", argv[1]);

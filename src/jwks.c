@@ -354,19 +354,19 @@ pg_oauth_jwks_select(const char *document, size_t document_length,
 		json_t	   *key = json_array_get(keys, i);
 		json_t	   *candidate_id;
 
+		/*
+		 * RFC 7517 section 5: ignore array members that cannot be used. An
+		 * entry that is not an object, or whose "kid" is not a usable key ID,
+		 * can never be selected for a token (whose own "kid" was validated),
+		 * so skipping it cannot admit a key. Duplicate usable key IDs remain
+		 * an error because they make the selection ambiguous.
+		 */
 		if (!json_is_object(key))
-		{
-			pg_oauth_selected_jwk_clear(selected);
-			return PG_OAUTH_JWKS_INVALID_KEYS;
-		}
-		candidate_id = json_object_get(key, "kid");
-		if (candidate_id == NULL)
 			continue;
-		if (!valid_key_id(candidate_id, policy->max_key_id_size))
-		{
-			pg_oauth_selected_jwk_clear(selected);
-			return PG_OAUTH_JWKS_INVALID_KEY_ID;
-		}
+		candidate_id = json_object_get(key, "kid");
+		if (candidate_id == NULL ||
+			!valid_key_id(candidate_id, policy->max_key_id_size))
+			continue;
 		if (json_string_length(candidate_id) == key_id_length &&
 			memcmp(json_string_value(candidate_id), key_id, key_id_length) == 0)
 		{
@@ -420,7 +420,7 @@ pg_oauth_jwks_error_code(PgOAuthJwksError error)
 {
 	static const char *const codes[] = {
 		"ok", "invalid_argument", "empty", "too_large", "invalid_json",
-		"invalid_keys", "too_many_keys", "invalid_key_id", "duplicate_key_id",
+		"invalid_keys", "too_many_keys", "duplicate_key_id",
 		"key_not_found", "algorithm_mismatch", "key_not_for_signature",
 		"invalid_key"
 	};

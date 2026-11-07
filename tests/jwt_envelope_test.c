@@ -146,6 +146,51 @@ main(void)
 	pg_oauth_jwt_envelope_clear(&envelope);
 	free(token);
 
+	/*
+	 * RFC 7515 section 4.1.9: media type names are case-insensitive (RFC 9068
+	 * section 2.1 itself writes "at+JWT"). The allowlist still selects the
+	 * spelling, and only ASCII case folds.
+	 */
+	{
+		static const struct
+		{
+			const char *typ;
+			uint8_t		allowed;
+			PgOAuthJwtEnvelopeError expected;
+		}			cases[] = {
+			{"at+JWT", PG_OAUTH_TOKEN_TYPE_AT_JWT, PG_OAUTH_JWT_ENVELOPE_OK},
+			{"AT+JWT", PG_OAUTH_TOKEN_TYPES_ALL, PG_OAUTH_JWT_ENVELOPE_OK},
+			{"Application/At+Jwt", PG_OAUTH_TOKEN_TYPE_APPLICATION_AT_JWT, PG_OAUTH_JWT_ENVELOPE_OK},
+			{"APPLICATION/AT+JWT", PG_OAUTH_TOKEN_TYPES_ALL, PG_OAUTH_JWT_ENVELOPE_OK},
+			{"Application/At+Jwt", PG_OAUTH_TOKEN_TYPE_AT_JWT, PG_OAUTH_JWT_ENVELOPE_INVALID_TOKEN_TYPE},
+			{"AT+JWT", PG_OAUTH_TOKEN_TYPE_APPLICATION_AT_JWT, PG_OAUTH_JWT_ENVELOPE_INVALID_TOKEN_TYPE},
+			{"at+jwt ", PG_OAUTH_TOKEN_TYPES_ALL, PG_OAUTH_JWT_ENVELOPE_INVALID_TOKEN_TYPE},
+			{" at+jwt", PG_OAUTH_TOKEN_TYPES_ALL, PG_OAUTH_JWT_ENVELOPE_INVALID_TOKEN_TYPE},
+			{"at+jw", PG_OAUTH_TOKEN_TYPES_ALL, PG_OAUTH_JWT_ENVELOPE_INVALID_TOKEN_TYPE},
+			{"JWT", PG_OAUTH_TOKEN_TYPES_ALL, PG_OAUTH_JWT_ENVELOPE_INVALID_TOKEN_TYPE},
+			{"at\xc2\xaajwt", PG_OAUTH_TOKEN_TYPES_ALL, PG_OAUTH_JWT_ENVELOPE_INVALID_TOKEN_TYPE},
+		};
+
+		for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+		{
+			char		header[128];
+
+			snprintf(header, sizeof(header),
+					 "{\"alg\":\"RS256\",\"typ\":\"%s\",\"kid\":\"k\"}", cases[i].typ);
+			policy = valid_policy();
+			policy.allowed_token_types = cases[i].allowed;
+			token = make_token(header, "{}");
+			if (pg_oauth_jwt_envelope_parse(token, strlen(token), &policy,
+											&envelope) != cases[i].expected)
+				fail("token type case or spelling rule was applied incorrectly");
+			if (cases[i].expected == PG_OAUTH_JWT_ENVELOPE_OK)
+				pg_oauth_jwt_envelope_clear(&envelope);
+			free(token);
+		}
+		policy = valid_policy();
+		policy.allowed_token_types = PG_OAUTH_TOKEN_TYPES_ALL;
+	}
+
 	policy.allow_missing_token_type = true;
 	token = make_token("{\"alg\":\"RS256\",\"kid\":\"k\"}", "{}");
 	if (pg_oauth_jwt_envelope_parse(token, strlen(token), &policy, &envelope) !=

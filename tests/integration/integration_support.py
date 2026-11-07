@@ -289,6 +289,8 @@ class LocalIdp:
         self.active_requests = 0
         self.keys = {}
         self.published_keys = []
+        # Raw JSON members placed in front of the published keys (unusable entries).
+        self.extra_jwks_entries = []
         self.active_key_id = None
         subprocess.run(
             ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
@@ -316,8 +318,8 @@ class LocalIdp:
                 elif self.path == "/jwks":
                     resource = "jwks"
                     idp.record_request(resource)
-                    value = {"keys": [idp.keys[key_id][1]
-                                      for key_id in idp.published_keys]}
+                    value = {"keys": idp.extra_jwks_entries +
+                             [idp.keys[key_id][1] for key_id in idp.published_keys]}
                 else:
                     self.send_error(404)
                     return
@@ -331,6 +333,17 @@ class LocalIdp:
                     self.send_response(503)
                     self.send_header("Content-Type", "application/json")
                     body = json.dumps({"error": IDP_RESPONSE_SECRET}).encode()
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if fault is not None and fault.startswith("status_"):
+                    # A 2xx status other than 200 with an otherwise valid document.
+                    code = int(fault.split("_", 1)[1])
+                    body = b"" if code == 204 else json.dumps(
+                        value, separators=(",", ":")).encode()
+                    self.send_response(code)
+                    self.send_header("Content-Type", "application/json")
                     self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
                     self.wfile.write(body)

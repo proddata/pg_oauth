@@ -23,6 +23,13 @@ session tokens must be unable to satisfy the configured resource audience and
 database scope together. This is an issuer and deployment contract; token
 claims alone cannot prove that another token kind could never carry them.
 
+The `typ` value is compared ignoring ASCII case, because media type names are
+case-insensitive (RFC 7515 section 4.1.9) and RFC 9068's own example is
+`at+JWT`. Spelling is not equated across forms: an operator who lists only
+`at+jwt` still rejects `application/at+jwt`, because the allowlist is an
+explicit administrator choice. Case folding is ASCII-only so the result does
+not depend on the database locale.
+
 The previous singular `required_token_type` GUC is removed before the first
 stable release. An existing configuration must migrate to
 `allowed_token_types` and the module rejects the old setting at startup.

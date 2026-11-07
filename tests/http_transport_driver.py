@@ -76,6 +76,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_header("Cache-Control", "x" * 5000)
             body = b'{"ok":true}'
+        elif self.path.startswith("/status-"):
+            # RFC 8414 section 3.2 / RFC 7517 section 5: only 200 carries the document.
+            code = int(self.path.split("-", 1)[1])
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            body = b"" if code == 204 else b'{"ok":true}'
         elif self.path == "/error":
             self.send_response(503)
             self.send_header("Content-Type", "application/json")

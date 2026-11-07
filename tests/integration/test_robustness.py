@@ -395,3 +395,60 @@ def test_unusable_freshness_headers_are_retained_for_the_minimum(
         assert connect(token).returncode == 0
         assert connect(token).returncode == 0
         assert idp.request_counts() == {"metadata": 1, "jwks": 1}
+
+
+def test_unusable_jwks_entries_and_status_and_type_spelling(integration_environment):
+    """RFC 7517 section 5: unusable key-set members are ignored, so one of them
+    cannot take an issuer's keys offline. RFC 8414 / RFC 7517: only a 200
+    response carries the document. RFC 7515 section 4.1.9: the token type
+    compares case-insensitively."""
+    pg_config, validator_library, client = integration_environment
+    with tempfile.TemporaryDirectory(prefix="pg-oauth-strictness-") as directory:
+        idp = LocalIdp(pathlib.Path(directory), cache_max_age=0)
+        cluster = TemporaryPostgres(
+            pg_config, validator_library, issuer=idp.issuer,
+            identity_map=("principal", "appuser"), ca_file=idp.tls_certificate,
+            server_certificate=idp.tls_certificate, server_key=idp.tls_key,
+            extra_config="pg_oauth_validator.cache_min_ttl = '0'\n",
+        )
+        previous_ca = os.environ.get("SSL_CERT_FILE")
+        os.environ["SSL_CERT_FILE"] = str(idp.tls_certificate)
+
+        def connect(token):
+            return attempt_oauth(
+                cluster, client, token=token, user="appuser",
+                issuer=idp.issuer, sslmode="require",
+            )
+
+        try:
+            cluster.start()
+            psql(cluster, "CREATE ROLE appuser LOGIN")
+
+            # Statuses other than 200 are not trusted, for either document.
+            for resource in ("metadata", "jwks"):
+                for code in (203, 204, 206):
+                    idp.set_fault(resource, f"status_{code}")
+                    assert connect(idp.sign()).returncode != 0, (resource, code)
+                idp.set_fault(resource, None)
+            assert connect(idp.sign()).returncode == 0, cluster.logs()
+
+            # Unusable members next to the real key do not deny the real key.
+            idp.extra_jwks_entries = [
+                1, "x", None, [], {}, {"kid": 5}, {"kid": "bad\nid"},
+                {"kty": "oct", "kid": "sym", "k": "AA"},
+            ]
+            accepted = connect(idp.sign())
+            assert accepted.returncode == 0, accepted.stderr + cluster.logs()
+            # ...and never stand in for a key: a token naming one is denied.
+            assert connect(idp.sign(header_key_id="sym")).returncode != 0
+            idp.extra_jwks_entries = []
+
+            assert connect(idp.sign(token_type="AT+JWT")).returncode == 0, cluster.logs()
+            assert connect(idp.sign(token_type="at+jwt ")).returncode != 0
+        finally:
+            if previous_ca is None:
+                os.environ.pop("SSL_CERT_FILE", None)
+            else:
+                os.environ["SSL_CERT_FILE"] = previous_ca
+            cluster.stop()
+            idp.close()

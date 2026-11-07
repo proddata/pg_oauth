@@ -208,6 +208,8 @@ than use `all` or a broad `+group` unless that wider authority is intentional.
 - Cache entries are separated by exact URL, issuer, and complete validation policy.
 - Unknown signing keys may trigger at most one controlled refresh, subject to a cooldown on the exact cache entry. An entry is keyed by issuer, URLs and complete validation policy, so the entries for one issuer differ only by administrator-defined policy and their number is bounded by configuration.
 - A well-formed key set that cannot serve a token's key is still published; only that token is denied.
+- Metadata and JWKS are accepted only from a `200` response. Within the size and key-count limits, JWKS members that are not objects or lack a usable `kid` are ignored (RFC 7517 section 5); duplicate `kid` values, an empty set, and a malformed selected key still deny.
+- The token `typ` is matched ignoring ASCII case (RFC 7515 section 4.1.9); the allowlist selects the accepted spelling.
 - Responses that would otherwise be fetched on every authentication (`no-store`, `no-cache`, `max-age=0`, unusable freshness headers) are retained for a short administrator-set minimum, `cache_min_ttl` (default 30 s, at most 5 minutes). Zero restores per-authentication fetching. A positive provider lifetime is never extended, and nothing retained this way is used stale.
 - When another backend is already refreshing the same cold cache entry,
   authentication waits for bounded publication by default and then retries the
