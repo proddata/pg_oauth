@@ -177,7 +177,7 @@ rejected, not normalized, when they contain ASCII or C1 controls, malformed
 UTF-8, or an invisible, line-breaking or text-reordering character (soft hyphen,
 zero width characters and joiners, bidi marks, embeddings, overrides and
 isolates, line and paragraph separators, the byte order mark, and interlinear
-annotation characters). The exact set is in `src/identity_text.h` and
+annotation characters). The exact set is in `shared/identity_text.h` and
 `docs/configuration.md`. Emoji sequences joined with U+200D are refused as a
 consequence.
 

@@ -126,7 +126,7 @@ dependency_version()
 	fi
 }
 
-mkdir -p "$build_dir/src" "$build_dir/tests/integration" "$stage_dir" "$output_dir"
+mkdir -p "$build_dir/shared" "$build_dir/validator" "$build_dir/tests/integration" "$stage_dir" "$output_dir"
 # Keep VPATH relative so Clang's LLVM module source_filename is independent of
 # the random secure temporary directory. Clang's prefix-map flags do not rewrite
 # that bitcode field.

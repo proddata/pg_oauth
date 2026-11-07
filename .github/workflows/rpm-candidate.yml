@@ -9,7 +9,8 @@ on:
       - 'packaging/rpm/**'
       - 'tests/ci/test_rpm*.py'
       - 'tests/integration/**'
-      - 'src/**'
+      - 'shared/**'
+      - 'validator/**'
       - 'Makefile'
       - 'scripts/ci/install-*.sh'
   workflow_dispatch:
