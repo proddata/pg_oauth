@@ -410,11 +410,11 @@ main(void)
 	expect_error("{\"keys\":[],\"keys\":[]}", "k", PG_OAUTH_ALGORITHM_RS256,
 				 PG_OAUTH_JWKS_INVALID_JSON, "duplicate keys member was accepted");
 	expect_error("{\"keys\":[{\"kid\":\"\",\"kty\":\"RSA\"},{\"kid\":\"k\"}]}", "k",
-				 PG_OAUTH_ALGORITHM_RS256, PG_OAUTH_JWKS_INVALID_KEY_ID,
-				 "empty key identifier on another key was accepted");
+				 PG_OAUTH_ALGORITHM_RS256, PG_OAUTH_JWKS_ALGORITHM_MISMATCH,
+				 "empty key identifier on another key denied the whole key set");
 	expect_error("{\"keys\":[{\"kid\":5},{\"kid\":\"k\",\"kty\":\"RSA\"}]}", "k",
-				 PG_OAUTH_ALGORITHM_RS256, PG_OAUTH_JWKS_INVALID_KEY_ID,
-				 "numeric key identifier on another key was accepted");
+				 PG_OAUTH_ALGORITHM_RS256, PG_OAUTH_JWKS_ALGORITHM_MISMATCH,
+				 "numeric key identifier on another key denied the whole key set");
 	{
 		/* One key more than the policy allows, with the wanted key first. */
 		char		many[2048] = "{\"keys\":[";

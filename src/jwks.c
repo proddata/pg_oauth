@@ -420,7 +420,7 @@ pg_oauth_jwks_error_code(PgOAuthJwksError error)
 {
 	static const char *const codes[] = {
 		"ok", "invalid_argument", "empty", "too_large", "invalid_json",
-		"invalid_keys", "too_many_keys", "invalid_key_id", "duplicate_key_id",
+		"invalid_keys", "too_many_keys", "duplicate_key_id",
 		"key_not_found", "algorithm_mismatch", "key_not_for_signature",
 		"invalid_key"
 	};
