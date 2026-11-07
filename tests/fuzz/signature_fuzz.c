@@ -80,7 +80,11 @@ LLVMFuzzerInitialize(int *argc, char ***argv)
 				PG_OAUTH_JWKS_OK);
 		tokens[i] = signed_token_variant(key, algorithm_names[i], "fuzz-key", plain);
 		REQUIRE(strlen(tokens[i]) < TOKEN_MAX);
-		/* The unmodified token must verify, or the oracle below proves nothing. */
+
+		/*
+		 * The unmodified token must verify, or the oracle below proves
+		 * nothing.
+		 */
 		REQUIRE(pg_oauth_signature_verify(tokens[i], strlen(tokens[i]),
 										  &selected[i]) == PG_OAUTH_SIGNATURE_OK);
 		free(jwks);
