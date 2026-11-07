@@ -40,7 +40,9 @@ make install DESTDIR=/path/to/package-root
 
 `packagecheck` verifies the shared library, installed documentation,
 permissions, exported callback symbol, static libjwt/Jansson linkage, and the
-optional PostgreSQL LLVM-bitcode manifest. Build a separate package for each
+optional PostgreSQL LLVM-bitcode manifest. It also stages the PAM module beside
+the validator, as the release archives contain it, and checks its exports,
+linkage and permissions (see the [PAM guide](pam.md#install)). Build a separate package for each
 PostgreSQL major version. Never install a PostgreSQL 18 binary into PostgreSQL
 19 or the reverse.
 

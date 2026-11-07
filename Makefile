@@ -29,6 +29,7 @@ VALIDATOR_LIBRARY ?= $(CURDIR)/$(MODULE_big)$(DLSUFFIX)
 # The PAM module is an opt-in, independent artifact (ADR 0008); `all` never
 # builds it, so OAuth-only builds need no PAM development files.
 PAM_MODULE = pam/pg_oauth_pam$(DLSUFFIX)
+PAM_WRONG_MAJOR_MODULE = pam/pg_oauth_pam_wrong_major$(DLSUFFIX)
 # The validation pipeline is compiled privately into the PAM module; nothing from
 # the OAuth module or the PostgreSQL glue (config, HBA, shared cache) is used.
 PAM_VALIDATION_SOURCES = shared/policy.c shared/validator_policy.c shared/validator.c \
@@ -104,7 +105,7 @@ EXTRA_CLEAN = $(TEST_BIN) $(POLICY_TEST_BIN) $(JWT_ENVELOPE_TEST_BIN) \
 	$(POLICY_FUZZ_CORPUS) $(SIGNATURE_FUZZ_CORPUS) $(HTTP_FRESHNESS_FUZZ_CORPUS) \
 	$(CACHE_KEY_FUZZ_CORPUS) \
 	$(METADATA_FUZZ_CORPUS) \
-	$(PAM_MODULE) $(PAM_CREDENTIAL_TEST_BIN) $(PAM_POLICY_TEST_BIN) $(PAM_TRANSACTION_TEST_BIN) \
+	$(PAM_MODULE) $(PAM_WRONG_MAJOR_MODULE) $(PAM_CREDENTIAL_TEST_BIN) $(PAM_POLICY_TEST_BIN) $(PAM_TRANSACTION_TEST_BIN) \
 	.ci-analysis \
 	tests/integration/__pycache__ tests/interop/keycloak/__pycache__
 
@@ -238,14 +239,24 @@ pam-module: $(PAM_MODULE)
 # into it (the custom setting's variable and description strings, the lock
 # tranche name) and a backend may still be inside libcurl/libjwt code. The module
 # must therefore stay mapped for the life of the backend (ADR 0009).
-$(PAM_MODULE): check-pam-pg-version $(PAM_SOURCES) $(PAM_HEADERS) $(PAM_EXPORTS)
+# $(1) holds extra compiler flags for a test variant of the module.
+define pam_build
 	@mkdir -p pam
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(PG_CPPFLAGS) -I$(includedir_server) \
-		-I$(srcdir)/shared -I$(srcdir)/pam -fPIC -shared -DPG_OAUTH_CACHE_NAMESPACE_PAM \
+		-I$(srcdir)/shared -I$(srcdir)/pam -fPIC -shared -DPG_OAUTH_CACHE_NAMESPACE_PAM $(1) \
 		$$(pkg-config --cflags jansson libcurl libjwt openssl) \
 		-Wl,-Bsymbolic -Wl,-z,nodelete -Wl,--version-script=$(srcdir)/$(PAM_EXPORTS) \
 		-o $@ $(filter %.c,$^) $(LIBJWT_STATIC) $(JANSSON_STATIC) \
 		$$(pkg-config --libs libcurl openssl) -lpam -ldl
+endef
+
+$(PAM_MODULE): check-pam-pg-version $(PAM_SOURCES) $(PAM_HEADERS) $(PAM_EXPORTS)
+	$(call pam_build,)
+
+# The same module compiled for a PostgreSQL major that cannot be the running
+# one, to prove that a binary built for another major refuses to authenticate.
+$(PAM_WRONG_MAJOR_MODULE): check-pam-pg-version $(PAM_SOURCES) $(PAM_HEADERS) $(PAM_EXPORTS)
+	$(call pam_build,-DPG_OAUTH_PAM_EXPECTED_MAJOR=1)
 
 $(PAM_CREDENTIAL_TEST_BIN): tests/pam/credential_test.c pam/pam_credential.c $(PAM_HEADERS)
 	@mkdir -p tests/pam
@@ -289,7 +300,7 @@ check-pam-symbols: $(PAM_MODULE)
 	@# dependency must be added here deliberately (ADR 0009).
 	@unexpected=$$(nm -D --undefined-only $(PAM_MODULE) | awk '{print $$2}' | sed 's/@.*//' \
 	  | grep -E '^(ConditionVariable|DefineCustom|GetNamed|LWLock|MarkGUC|palloc|pfree|repalloc|pg_|elog|err|Memory|Process|proc_|Wait|Interrupt|Latch|Shmem|dsm_|BackgroundWorker|Check|Resource|Set|Get)' \
-	  | grep -v -x -E 'ConditionVariable(Broadcast|CancelSleep|Init|PrepareToSleep|TimedSleep)|DefineCustomIntVariable|GetNamedDSMSegment|LWLock(Acquire|Initialize|NewTrancheId|RegisterTranche|Release)|MarkGUCPrefixReserved$(if $(PAM_PRELOAD),|AddinShmemInitLock|RequestAddinShmemSpace|ShmemInitStruct|shmem_(request|startup)_hook|process_shared_preload_libraries_in_progress|err(start|start_cold|code|msg|finish))' || true); \
+	  | grep -v -x -E 'ConditionVariable(Broadcast|CancelSleep|Init|PrepareToSleep|TimedSleep)|DefineCustomIntVariable|GetConfigOption|GetNamedDSMSegment|LWLock(Acquire|Initialize|NewTrancheId|RegisterTranche|Release)|MarkGUCPrefixReserved$(if $(PAM_PRELOAD),|AddinShmemInitLock|RequestAddinShmemSpace|ShmemInitStruct|shmem_(request|startup)_hook|process_shared_preload_libraries_in_progress|err(start|start_cold|code|msg|finish))' || true); \
 	test -z "$$unexpected" || \
 	  { echo "error: PAM module has unexpected PostgreSQL symbols: $$unexpected" >&2; exit 1; }
 
@@ -330,9 +341,9 @@ pam-bothcheck: all $(PAM_MODULE) $(OAUTH_TEST_CLIENT_PATH) check-modules-disjoin
 		PYTHONPYCACHEPREFIX="$(CURDIR)/.pycache" \
 		python3 -m pytest -q -o cache_dir="$(CURDIR)/.pytest_cache" "$(srcdir)/tests/pam_both"
 
-pam-integrationcheck: check-pam-pg-version $(PAM_MODULE)
+pam-integrationcheck: check-pam-pg-version $(PAM_MODULE) $(PAM_WRONG_MAJOR_MODULE)
 	$(PG_CONFIG) --version
-	PG_CONFIG="$(PG_CONFIG)" \
+	PG_CONFIG="$(PG_CONFIG)" PAM_MODULE_WRONG_MAJOR="$(CURDIR)/$(PAM_WRONG_MAJOR_MODULE)" \
 		PAM_MODULE="$(CURDIR)/$(PAM_MODULE)" PYTHONPYCACHEPREFIX="$(CURDIR)/.pycache" \
 		python3 -m pytest -q -o cache_dir="$(CURDIR)/.pytest_cache" "$(srcdir)/tests/pam"
 
@@ -636,6 +647,7 @@ packagecheck: all
 	@stage="$$(mktemp -d)"; \
 	trap 'rm -rf "$$stage"' EXIT INT TERM; \
 	$(MAKE) install DESTDIR="$$stage" >/dev/null; \
+	$(MAKE) install-pam DESTDIR="$$stage" PAM_MODULE_DIR="$$($(PG_CONFIG) --pkglibdir)" >/dev/null; \
 	sh "$(srcdir)/scripts/ci/check-staged-install.sh" "$$stage" "$(PG_CONFIG)"
 
 # RELEASE_VERSION and SOURCE_DATE_EPOCH are mandatory so release artifacts are

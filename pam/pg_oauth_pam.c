@@ -152,6 +152,11 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 		goto done;
 	/* Cache keys are isolated per PAM service as well as by full policy. */
 	policy.validation.name = service;
+	if (!pg_oauth_pam_server_matches())
+	{
+		pam_syslog(pamh, LOG_ERR, "module built for a different PostgreSQL major version");
+		goto done;
+	}
 	if (!pg_oauth_pam_cache_io(&cache_io) || !monotonic_ms(&started_ms))
 		goto done;
 	if (pg_oauth_pam_credential_acquire(pamh, (size_t) policy.validation.max_token_size,

@@ -56,12 +56,14 @@ following hold for the exact reviewed commit:
 - Every row of the PAM section of the
   [traceability matrix](security/initial-review-traceability.md#pam-module-experimental-and-the-adr-0009-release-gate)
   is **Covered**, or its gap is closed by a recorded, dated decision that names
-  a reviewer. Re-read the matrix at release time: when this was written the only
-  row that was not **Covered** was the PostgreSQL 15 and 16 preload row, whose
-  shared state is exercised but not asserted to be a single copy.
+  a reviewer. Re-read the matrix at release time; when this was written every
+  row was **Covered**.
 - The RPM subpackage and the SELinux enforcing run pass on each packaged
   platform ([RPM platforms](rpm-platforms.md)), with PAM upgrade and rollback
-  rehearsed using matching module and configuration.
+  rehearsed using matching module and configuration. The rehearsal needs a
+  retained baseline that already contains the PAM package, so it cannot be done
+  for the first release that includes PAM: record that exception in that
+  release's notes and rehearse for real at the next release.
 - Any PAM-specific operator documentation change is reviewed with the release,
   including the libpam preload requirement on PostgreSQL 15 and 16.
 
@@ -84,6 +86,16 @@ Repeat with PostgreSQL 19 and a separate output path. The target stages and
 checks installation, normalizes archive metadata, and emits `BUILD-MANIFEST`
 and SHA-256. Inspect per-file digests, exact PostgreSQL release and full licenses;
 prove each package rejects the other major's environment.
+
+Each archive holds both modules, `pg_oauth_validator.so` and `pg_oauth_pam.so`,
+in the PostgreSQL library directory, and the manifest records the libpam versions
+the PAM module links. The staged-install check verifies the PAM module's exports,
+`-z nodelete`, absence of a private search path, embedded libjwt and Jansson, and
+libpam linkage. The validator rejects another major through its magic block; the
+PAM module, which libpam loads from PostgreSQL 17 on, does so with its own version
+check (`test_a_module_built_for_another_major_never_authenticates`). Before
+publishing, build each archive twice from the same revision and compare the
+digests, then run the PAM suite against the module extracted from the archive.
 
 Debian image digest, snapshot and exact package versions in
 `scripts/ci/install-debian-dependencies.sh` are one reviewed input set. Record

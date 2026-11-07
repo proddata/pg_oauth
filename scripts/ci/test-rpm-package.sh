@@ -237,9 +237,26 @@ if test -f "$work_dir/baseline/pam-package-path"; then
 	# The real-connection suite needs a disposable container. The SELinux VM
 	# gate runs a separate, focused confinement check against this package.
 	if test -f /.dockerenv; then
+		# The major-version guard test needs a second module compiled with a
+		# different expected major (`make pam-integrationcheck` builds it); the
+		# packaged module cannot be rebuilt that way, so the PAM module CI jobs
+		# cover it. Deselect only that test, by name.
 		PG_CONFIG="$PG_CONFIG_PATH" PAM_MODULE="$pam_library" \
 			OAUTH_TEST_PAM_DISPOSABLE=1 PYTHONPYCACHEPREFIX=/source/.pycache \
-			python3 -m pytest -q -o cache_dir=/source/.pytest_cache /source/tests/pam
+			python3 -m pytest -q -o cache_dir=/source/.pytest_cache /source/tests/pam \
+			-k 'not test_a_module_built_for_another_major_never_authenticates'
+		# Upgrade and rollback of the PAM package alone (ADR 0008, 0009): the
+		# baseline is installed, so replace it with the candidate and back.
+		if test -n "$candidate_package"; then
+			test -f "$work_dir/candidate/pam-package-path" || {
+				echo 'error: the candidate has no PAM package although the baseline does' >&2
+				exit 1
+			}
+			PG_CONFIG="$PG_CONFIG_PATH" OAUTH_TEST_PAM_DISPOSABLE=1 \
+				PYTHONPYCACHEPREFIX=/source/.pycache \
+				python3 /source/tests/integration/rpm_pam_upgrade.py \
+				"$pam_package" "$(cat "$work_dir/candidate/pam-package-path")"
+		fi
 	fi
 	rpm --verify "$pam_name"
 	# The confinement gate consumes this exact tested artifact as well.
@@ -255,6 +272,10 @@ if test -f "$work_dir/baseline/pam-package-path"; then
 		echo 'error: PAM package remains installed after removal' >&2
 		exit 1
 	fi
+fi
+if test -n "$candidate_package" && test ! -f "$work_dir/baseline/pam-package-path" &&
+	test -f "$work_dir/candidate/pam-package-path"; then
+	echo 'PAM upgrade and rollback were NOT rehearsed: the baseline has no PAM package' >&2
 fi
 echo 'RPM offline build, source integrity, install, OAuth, PAM and removal checks passed'
 # Candidate export happens only after every install/runtime/removal check passed.
