@@ -538,8 +538,14 @@ pg_oauth_http_get_json(const char *url, const PgOAuthHttpPolicy *policy,
 			error = PG_OAUTH_HTTP_NETWORK_FAILURE;
 		goto done;
 	}
+
+	/*
+	 * RFC 8414 section 3.2 and RFC 7517 section 5 define the document as the
+	 * body of a 200 response. Other 2xx codes (203, 204, 206) can carry no
+	 * body or a partial or transformed one, so they are not trusted.
+	 */
 	if (curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &response->status) !=
-		CURLE_OK || response->status < 200 || response->status >= 300)
+		CURLE_OK || response->status != 200)
 	{
 		error = PG_OAUTH_HTTP_STATUS;
 		goto done;
