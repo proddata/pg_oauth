@@ -116,6 +116,17 @@ rollback and exact restored module/configuration digests and permissions.
 Every phase checks verified TLS, acceptance/denial, rotation, outage/recovery,
 protected administration and redaction. Never weaken trust policy to recover.
 
+When both the baseline and the candidate contain the PAM subpackage, the same
+script also rehearses it alone, without the validator package
+(`tests/integration/rpm_pam_upgrade.py`): a PAM-only cluster with a `pam.d`
+service, the same A -> B -> A transaction, the operator's `pam.d` service file,
+`pg_hba.conf` and certificates untouched by the upgrade, a changed candidate
+audience, rejected implicit downgrade, explicit rollback to the exact module
+digest, and in each phase acceptance, denial, provider outage and recovery, and
+redaction. A candidate that drops the PAM package its baseline has fails. When
+the baseline has no PAM package, as for the first release that includes it, the
+run says that PAM upgrade and rollback were not rehearsed.
+
 Compatibility CI's `0.0.0`/`0.0.1` use the same source and prove transaction
 mechanics only. Real release evidence must consume retained previous/candidate
 artifacts with reviewed configuration migration. Retain package and matching
