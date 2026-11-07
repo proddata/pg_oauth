@@ -79,7 +79,20 @@ python3 -m pytest -q --maxfail=1 --capture=tee-sys -p no:cacheprovider tests/int
 # A fresh cluster prevents cached keys from masking the effect of removal.
 semodule -r pg_oauth_https
 python3 tests/integration/selinux_denial.py
-rpm --verify postgresql18-pg_oauth_validator
+# The PAM module is a separate package. Install the tested artifact as an
+# operator would, then repeat the denial/allowance/denial cycle with a fresh
+# cluster each time. The module runs inside the confined PostgreSQL backend.
+rpm --install /opt/tested-rpm/pam.rpm
+pam_library="$(rpm --eval '%{_libdir}')/security/pg_oauth_pam.so"
+restorecon -v "$pam_library"
+ls -Z "$pam_library"
+export PAM_MODULE="$pam_library"
+python3 tests/pam/selinux_check.py denied
+semodule -i "$policy"
+python3 tests/pam/selinux_check.py allowed
+semodule -r pg_oauth_https
+python3 tests/pam/selinux_check.py denied
+rpm --verify postgresql18-pg_oauth_validator postgresql18-pg_oauth_validator-pam
 auditctl -s >/tmp/pg-oauth-audit-status
 cat /tmp/pg-oauth-audit-status
 grep -Fx 'lost 0' /tmp/pg-oauth-audit-status

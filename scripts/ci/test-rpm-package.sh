@@ -234,14 +234,19 @@ if test -f "$work_dir/baseline/pam-package-path"; then
 		echo 'error: writable installed PAM package files' >&2
 		exit 1
 	fi
-	# The real-connection suite needs a disposable container; the SELinux VM
-	# gate installs the tested validator RPM only and does not run it.
+	# The real-connection suite needs a disposable container. The SELinux VM
+	# gate runs a separate, focused confinement check against this package.
 	if test -f /.dockerenv; then
 		PG_CONFIG="$PG_CONFIG_PATH" PAM_MODULE="$pam_library" \
 			OAUTH_TEST_PAM_DISPOSABLE=1 PYTHONPYCACHEPREFIX=/source/.pycache \
 			python3 -m pytest -q -o cache_dir=/source/.pytest_cache /source/tests/pam
 	fi
 	rpm --verify "$pam_name"
+	# The confinement gate consumes this exact tested artifact as well.
+	if test -n "${RPM_TEST_EXPORT_DIR:-}"; then
+		test -d "$RPM_TEST_EXPORT_DIR"
+		cp "$pam_package" "$RPM_TEST_EXPORT_DIR/pam.rpm"
+	fi
 	rpm --erase "$pam_name"
 	test ! -e "$pam_library"
 	test ! -e "/usr/share/doc/$pam_name"
