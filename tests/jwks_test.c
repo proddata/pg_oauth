@@ -263,7 +263,7 @@ main(void)
 	expect_error("{\"keys\":[]}", "missing", PG_OAUTH_ALGORITHM_RS256,
 				 PG_OAUTH_JWKS_INVALID_KEYS, "empty key set was accepted");
 	expect_error("{\"keys\":[1]}", "missing", PG_OAUTH_ALGORITHM_RS256,
-				 PG_OAUTH_JWKS_INVALID_KEYS, "non-object key was accepted");
+				 PG_OAUTH_JWKS_KEY_NOT_FOUND, "non-object key was matched");
 	expect_error("{\"keys\":[],\"keys\":[]}", "missing",
 				 PG_OAUTH_ALGORITHM_RS256, PG_OAUTH_JWKS_INVALID_JSON,
 				 "duplicate JWKS member was accepted");
@@ -277,8 +277,41 @@ main(void)
 				 PG_OAUTH_ALGORITHM_RS256, PG_OAUTH_JWKS_KEY_NOT_FOUND,
 				 "unknown key identifier was accepted");
 	expect_error("{\"keys\":[{\"kid\":\"line\\nfeed\"}]}", "missing",
-				 PG_OAUTH_ALGORITHM_RS256, PG_OAUTH_JWKS_INVALID_KEY_ID,
-				 "control character in key identifier was accepted");
+				 PG_OAUTH_ALGORITHM_RS256, PG_OAUTH_JWKS_KEY_NOT_FOUND,
+				 "control character in key identifier was matched");
+	expect_error("{\"keys\":[{\"kid\":\"line\\nfeed\"}]}", "line",
+				 PG_OAUTH_ALGORITHM_RS256, PG_OAUTH_JWKS_KEY_NOT_FOUND,
+				 "partial match on an unusable key identifier was accepted");
+	expect_error("{\"keys\":[{\"kid\":7},{\"kid\":null},{}]}", "7",
+				 PG_OAUTH_ALGORITHM_RS256, PG_OAUTH_JWKS_KEY_NOT_FOUND,
+				 "non-string key identifier was matched");
+
+	/*
+	 * RFC 7517 section 5: unusable members are ignored, so one of them cannot
+	 * take a whole issuer's keys offline. The usable key still verifies.
+	 */
+	document = make_rsa_jwks("\"kid\":\"rsa-1\",\"alg\":\"RS256\",\"use\":\"sig\"", 256, 0x80);
+	{
+		static const char junk[] =
+			"{\"keys\":[1,\"x\",null,[],{},{\"kid\":5},{\"kid\":\"a\\nb\"},"
+			"{\"kty\":\"oct\",\"kid\":\"sym\",\"k\":\"AA\"},";
+		const char *rest = strchr(document, '[') + 1;
+		size_t		capacity = sizeof(junk) + strlen(rest);
+		char	   *mixed = malloc(capacity);
+
+		if (mixed == NULL)
+			fail("allocation failed");
+		snprintf(mixed, capacity, "%s%s", junk, rest);
+		if (pg_oauth_jwks_select(mixed, strlen(mixed), "rsa-1",
+								 PG_OAUTH_ALGORITHM_RS256, &policy, &selected) != PG_OAUTH_JWKS_OK)
+			fail("unusable sibling entries made a valid key unusable");
+		pg_oauth_selected_jwk_clear(&selected);
+		expect_error(mixed, "sym", PG_OAUTH_ALGORITHM_RS256,
+					 PG_OAUTH_JWKS_ALGORITHM_MISMATCH,
+					 "symmetric key was usable for a signature");
+		free(mixed);
+	}
+	free(document);
 
 	/* EdDSA is selected only when the administrator allows it. */
 	policy.allowed_algorithms |= PG_OAUTH_ALGORITHM_EDDSA;
