@@ -1,0 +1,10 @@
+https://idp.example/realms/a
+connect:postgres read:metadata
+default
+postgres://primary,postgres://secondary
+RS256,ES256,EdDSA
+at+jwt
+uid
+
+keys.example.com,jwks.example.org
+/etc/pki/ca.pem
