@@ -46,8 +46,9 @@ main(void)
 	/*
 	 * Characters that are invisible or reorder or split text must not reach
 	 * PostgreSQL's authenticated identity, its logs or a usermap: a person
-	 * reading "alice<RLO>..." cannot tell what was logged. Each range is tested
-	 * on both edges, and the legitimate neighbours just outside it stay valid.
+	 * reading "alice<RLO>..." cannot tell what was logged. Each range is
+	 * tested on both edges, and the legitimate neighbours just outside it
+	 * stay valid.
 	 */
 	{
 		static const struct

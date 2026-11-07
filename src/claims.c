@@ -28,6 +28,7 @@ valid_identity_string(const json_t *value, size_t maximum)
 		(length = json_string_length(value)) == 0 || length > maximum)
 		return false;
 	text = json_string_value(value);
+
 	return pg_oauth_identity_text_valid(text, length);
 }
 
