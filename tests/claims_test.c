@@ -328,11 +328,54 @@ main(void)
 				 "\"scope\":\"connect:postgres read:metadata connect:postgres\"}",
 				 &policy, PG_OAUTH_CLAIMS_INVALID_SCOPE,
 				 "duplicate scope token was accepted");
+	/* "scp" is accepted in place of "scope" (some providers emit only it). */
+	payload = parse_payload(
+							"{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\","
+							"\"exp\":1100,\"sub\":\"p\",\"scp\":\"connect:postgres read:metadata\"}");
+	if (pg_oauth_claims_validate(payload, &policy, &claims) != PG_OAUTH_CLAIMS_OK)
+		fail("scp string was rejected");
+	json_decref(payload);
+	payload = parse_payload(
+							"{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\","
+							"\"exp\":1100,\"sub\":\"p\",\"scp\":[\"connect:postgres\",\"read:metadata\"]}");
+	if (pg_oauth_claims_validate(payload, &policy, &claims) != PG_OAUTH_CLAIMS_OK)
+		fail("scp array was rejected");
+	json_decref(payload);
 	expect_error(
 				 "{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\","
-				 "\"exp\":1100,\"sub\":\"p\",\"scp\":\"connect:postgres read:metadata\"}",
+				 "\"exp\":1100,\"sub\":\"p\",\"scp\":\"connect:postgres\"}",
+				 &policy, PG_OAUTH_CLAIMS_INSUFFICIENT_SCOPE,
+				 "scp missing a required scope was accepted");
+	expect_error(
+				 "{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\","
+				 "\"exp\":1100,\"sub\":\"p\",\"scp\":\"connect:postgres read:metadata connect:postgres\"}",
 				 &policy, PG_OAUTH_CLAIMS_INVALID_SCOPE,
-				 "provider-specific scp claim was accepted implicitly");
+				 "duplicate scp token was accepted");
+	expect_error(
+				 "{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\","
+				 "\"exp\":1100,\"sub\":\"p\",\"scp\":[\"connect:postgres\",7]}",
+				 &policy, PG_OAUTH_CLAIMS_INVALID_SCOPE,
+				 "non-string scp array entry was accepted");
+	expect_error(
+				 "{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\","
+				 "\"exp\":1100,\"sub\":\"p\",\"scp\":42}",
+				 &policy, PG_OAUTH_CLAIMS_INVALID_SCOPE,
+				 "wrong-type scp was accepted");
+	expect_error(
+				 "{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\","
+				 "\"exp\":1100,\"sub\":\"p\",\"scp\":[]}",
+				 &policy, PG_OAUTH_CLAIMS_INVALID_SCOPE,
+				 "empty scp array was accepted");
+	expect_error(
+				 "{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\","
+				 "\"exp\":1100,\"sub\":\"p\",\"scp\":\"connect:postgres read:metadata\",\"scope\":\"connect:postgres read:metadata\"}",
+				 &policy, PG_OAUTH_CLAIMS_INVALID_SCOPE,
+				 "both scope and scp were accepted");
+	expect_error(
+				 "{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\","
+				 "\"exp\":1100,\"sub\":\"p\",\"scope\":\"connect:postgres\",\"scp\":\"read:metadata\"}",
+				 &policy, PG_OAUTH_CLAIMS_INVALID_SCOPE,
+				 "scp topped up an insufficient scope");
 
 	if (strstr(pg_oauth_claims_error_code(PG_OAUTH_CLAIMS_INVALID_IDENTITY),
 			   "principal") != NULL)

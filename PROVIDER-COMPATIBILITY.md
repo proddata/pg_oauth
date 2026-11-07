@@ -30,6 +30,10 @@ The values below describe the tested setup or, for Auth0, a configuration to
 verify during a new test. Set `pg_oauth_validator.audiences` to the exact `aud`
 in the **access token**. Set the HBA `issuer` to the exact discovered issuer and
 `scope` to a database-specific scope actually present in the access token.
+The scopes may be in the `scope` claim or, when that is absent, in `scp` (as
+Microsoft Entra ID and Okta emit); a token with both is denied. `scp` handling
+is unit-tested only, and there is no interoperability evidence for either
+provider.
 These values are deployment-specific; no issuer, audience, or client ID is
 inferred from a provider name. `audiences` is also cluster-wide; the current
 configuration does not assign a different audience or token-type exception to

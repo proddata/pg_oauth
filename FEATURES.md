@@ -50,8 +50,9 @@ The active release scope provides strict offline validation of signed JWT access
 - Mandatory configured audience validation.
 - Required expiry and stable authenticated identity.
 - Bounded clock skew and resource limits.
-- Required connection-scope validation using the strict `scope` claim and all
-  scopes configured by the matched HBA rule.
+- Required connection-scope validation using the strict `scope` claim, or the
+  `scp` claim some providers emit instead, and all scopes configured by the
+  matched HBA rule. A token carrying both claims is denied rather than merged.
 - Configurable authenticated-identity claim, defaulting to `sub`.
 - Direct authenticated-identity representation; every accepted token also has
   a valid `sub`, even when another identity claim is selected.
@@ -242,7 +243,8 @@ from other JWTs issued by the same provider. See
 
 The implementation has one policy, with explicit configuration for token type,
 algorithms, audience, identity, and optional role claim. It requires a `scope`
-claim and does not infer compatibility from issuer hostnames. An issuer needing
+claim, or `scp` when `scope` is absent (both present is denied), and does not
+infer compatibility from issuer hostnames. An issuer needing
 different claim syntax or validation rules is unsupported until a reviewed
 specification, implementation, and negative interoperability tests establish
 those rules. [Provider compatibility](PROVIDER-COMPATIBILITY.md) records the

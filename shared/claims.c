@@ -283,12 +283,23 @@ scope_array_contains(const json_t *scopes, const char *required,
 static PgOAuthClaimsError
 validate_scopes(const json_t *payload, const PgOAuthClaimsPolicy *policy)
 {
-	json_t	   *token_scopes = json_object_get(payload, "scope");
+	json_t	   *scope_claim = json_object_get(payload, "scope");
+	json_t	   *scp_claim = json_object_get(payload, "scp");
+	json_t	   *token_scopes;
 	const char *required = policy->required_scopes;
 	size_t		start = 0;
 	size_t		required_length = strlen(required);
 	size_t		count = 0;
 
+	/*
+	 * RFC 9068 section 2.2.3 defines "scope"; some providers (Microsoft Entra
+	 * ID, Okta) emit the same list as "scp". Accept exactly one of the two.
+	 * Both present is refused rather than merged: a union would let a scope
+	 * in either claim satisfy the HBA requirement.
+	 */
+	if (scope_claim != NULL && scp_claim != NULL)
+		return PG_OAUTH_CLAIMS_INVALID_SCOPE;
+	token_scopes = scope_claim != NULL ? scope_claim : scp_claim;
 	if (!json_is_string(token_scopes) && !json_is_array(token_scopes))
 		return PG_OAUTH_CLAIMS_INVALID_SCOPE;
 	for (size_t i = 0; i <= required_length; i++)
