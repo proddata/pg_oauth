@@ -1,5 +1,6 @@
 #include "claims.h"
 #include "ascii.h"
+#include "identity_text.h"
 
 #include <stdbool.h>
 #include <string.h>
@@ -16,7 +17,7 @@ json_string_equals(const json_t *value, const char *expected)
 		memcmp(json_string_value(value), expected, length) == 0;
 }
 
-/* Jansson validates UTF-8; reject ASCII and Unicode C1 controls in identities. */
+/* Identities use the shared rule in identity_text.h (controls, invisible and bidi characters). */
 static bool
 valid_identity_string(const json_t *value, size_t maximum)
 {
@@ -28,15 +29,7 @@ valid_identity_string(const json_t *value, size_t maximum)
 		return false;
 	text = json_string_value(value);
 
-	for (size_t i = 0; i < length; i++)
-	{
-		if (pg_oauth_ascii_iscntrl((unsigned char) text[i]) ||
-			((unsigned char) text[i] == 0xc2 && i + 1 < length &&
-			 (unsigned char) text[i + 1] >= 0x80 &&
-			 (unsigned char) text[i + 1] <= 0x9f))
-			return false;
-	}
-	return true;
+	return pg_oauth_identity_text_valid(text, length);
 }
 
 static bool
@@ -89,11 +82,8 @@ validate_requested_role(const json_t *payload,
 
 		if (length == 0 || length > policy->max_role_size)
 			return PG_OAUTH_CLAIMS_INVALID_ROLES;
-		for (size_t i = 0; i < length; i++)
-		{
-			if (pg_oauth_ascii_iscntrl((unsigned char) json_string_value(roles)[i]))
-				return PG_OAUTH_CLAIMS_INVALID_ROLES;
-		}
+		if (!pg_oauth_identity_text_valid(json_string_value(roles), length))
+			return PG_OAUTH_CLAIMS_INVALID_ROLES;
 		return length == requested_length &&
 			memcmp(json_string_value(roles), policy->requested_role, length) == 0 ?
 			PG_OAUTH_CLAIMS_OK : PG_OAUTH_CLAIMS_UNAUTHORIZED_ROLE;
@@ -110,11 +100,8 @@ validate_requested_role(const json_t *payload,
 			(entry_length = json_string_length(entry)) == 0 ||
 			entry_length > policy->max_role_size)
 			return PG_OAUTH_CLAIMS_INVALID_ROLES;
-		for (size_t k = 0; k < entry_length; k++)
-		{
-			if (pg_oauth_ascii_iscntrl((unsigned char) json_string_value(entry)[k]))
-				return PG_OAUTH_CLAIMS_INVALID_ROLES;
-		}
+		if (!pg_oauth_identity_text_valid(json_string_value(entry), entry_length))
+			return PG_OAUTH_CLAIMS_INVALID_ROLES;
 		for (size_t j = 0; j < i; j++)
 		{
 			json_t	   *previous = json_array_get(roles, j);

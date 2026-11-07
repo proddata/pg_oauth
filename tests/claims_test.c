@@ -202,6 +202,26 @@ main(void)
 				 "\"scope\":\"connect:postgres read:metadata\"}",
 				 &policy, PG_OAUTH_CLAIMS_INVALID_SUBJECT,
 				 "control character in identity was accepted");
+	/* Invisible and reordering characters are as unsafe in logs as controls. */
+	{
+		static const char *const hostile[] = {
+			"a\\u00adb", "a\\u061cb", "a\\u200bb", "a\\u200db", "a\\u200eb",
+			"a\\u2028b", "a\\u202eb", "a\\u2060b", "a\\u2066b", "a\\u2069b",
+			"a\\ufeffb", "a\\ufff9b",
+		};
+
+		for (size_t i = 0; i < sizeof(hostile) / sizeof(hostile[0]); i++)
+		{
+			char		document[256];
+
+			snprintf(document, sizeof(document),
+					 "{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\","
+					 "\"exp\":1100,\"sub\":\"%s\","
+					 "\"scope\":\"connect:postgres read:metadata\"}", hostile[i]);
+			expect_error(document, &policy, PG_OAUTH_CLAIMS_INVALID_SUBJECT,
+						 "invisible or reordering character in identity was accepted");
+		}
+	}
 
 	policy = valid_policy();
 	policy.identity_claim = "uid";
@@ -254,6 +274,18 @@ main(void)
 				 "\"scope\":\"connect:postgres read:metadata\"}",
 				 &policy, PG_OAUTH_CLAIMS_INVALID_SUBJECT,
 				 "Unicode control in sub with custom identity was accepted");
+	expect_error(
+				 "{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\","
+				 "\"exp\":1100,\"sub\":\"p\\u202e\",\"uid\":\"u\","
+				 "\"scope\":\"connect:postgres read:metadata\"}",
+				 &policy, PG_OAUTH_CLAIMS_INVALID_SUBJECT,
+				 "bidi override in sub with custom identity was accepted");
+	expect_error(
+				 "{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\","
+				 "\"exp\":1100,\"sub\":\"p\",\"uid\":\"u\\u200b\","
+				 "\"scope\":\"connect:postgres read:metadata\"}",
+				 &policy, PG_OAUTH_CLAIMS_INVALID_IDENTITY,
+				 "zero width space in a custom identity claim was accepted");
 	policy.max_subject_size = 1;
 	expect_error(
 				 "{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\","
@@ -390,6 +422,20 @@ main(void)
 				 "\"roles\":[\"reporting\\nadmin\"]}",
 				 &policy, PG_OAUTH_CLAIMS_INVALID_ROLES,
 				 "control character in delegated role was accepted");
+	expect_error(
+				 "{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\","
+				 "\"exp\":1100,\"sub\":\"p\","
+				 "\"scope\":\"connect:postgres read:metadata\","
+				 "\"roles\":[\"reporting\\u200b\"]}",
+				 &policy, PG_OAUTH_CLAIMS_INVALID_ROLES,
+				 "zero width space in a delegated role was accepted");
+	expect_error(
+				 "{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\","
+				 "\"exp\":1100,\"sub\":\"p\","
+				 "\"scope\":\"connect:postgres read:metadata\","
+				 "\"roles\":\"report\\u202eing\"}",
+				 &policy, PG_OAUTH_CLAIMS_INVALID_ROLES,
+				 "bidi override in a scalar delegated role was accepted");
 	expect_error(
 				 "{\"iss\":\"https://issuer.example/\",\"aud\":\"postgres://primary\","
 				 "\"exp\":1100,\"sub\":\"p\","

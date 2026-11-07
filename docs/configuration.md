@@ -123,6 +123,28 @@ Every accepted token must contain a valid `iss` and `sub`. The selected
 unchanged as PostgreSQL's authenticated identity. It is limited to 63 bytes to
 fit a PostgreSQL role name when exact matching is used.
 
+The identity, the `sub` claim and each delegated role name must be valid UTF-8
+and are rejected, not normalized, if they contain any of the following, because
+a person reading the connection log or a usermap cannot see them, or they make
+one identity look like another or one log line look like several:
+
+- ASCII controls and the C1 controls U+0080 to U+009F;
+- U+00AD (soft hyphen), U+061C (Arabic letter mark) and U+180E (Mongolian
+  vowel separator);
+- U+200B to U+200F (zero width space, non-joiner, joiner, left-to-right and
+  right-to-left marks);
+- U+2028 to U+202E (line and paragraph separators, bidirectional embeddings and
+  overrides);
+- U+2060 to U+206F (word joiner, invisible operators, bidirectional isolates and
+  the deprecated format controls);
+- U+FEFF (byte order mark) and U+FFF9 to U+FFFB (interlinear annotation).
+
+Ordinary non-ASCII text, such as accented letters, CJK ideographs and emoji, is
+accepted. Emoji sequences that use U+200D (zero width joiner), for example
+family or skin-tone sequences, are refused. A PostgreSQL role whose name
+contains one of these characters cannot be reached through OAuth or PAM even
+with a matching token; rename the role.
+
 Without `map=` or delegation, PostgreSQL requires the identity to exactly
 match the requested role:
 
