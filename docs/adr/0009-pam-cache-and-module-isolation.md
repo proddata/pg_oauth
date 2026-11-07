@@ -64,8 +64,19 @@ it never validates without refresh coordination. PAM cache keys include the PAM
 service name in addition to the complete policy.
 
 The module's only PostgreSQL dependencies are the condition-variable, lightweight
-lock, named-DSM and custom-setting calls this needs. `make check-pam-symbols`
-enforces that list, so any new server dependency must be added deliberately.
+lock, named-DSM and custom-setting calls this needs, plus `GetConfigOption`,
+used once to read `server_version_num`. `make check-pam-symbols` enforces that
+list, so any new server dependency must be added deliberately.
+
+A binary is built for one PostgreSQL major version and its shared-memory calls
+differ between majors (`GetNamedDSMSegment` gained an argument in 19). Before
+17 PostgreSQL's loader checks the module's magic block; from 17 libpam loads the
+module and nothing on the PostgreSQL side does. The module therefore compares the
+running server's major version with the one it was compiled for, once per
+process, and denies with a logged reason when they differ. The check is what lets
+a per-major PAM binary be distributed without relying on the operator to pair it
+with the right server. The Makefile builds a copy that believes it was built for
+another major (`PG_OAUTH_PAM_EXPECTED_MAJOR`) so a test can prove the refusal.
 
 ### Implemented storage on PostgreSQL 15 and 16
 

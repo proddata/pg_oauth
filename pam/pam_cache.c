@@ -13,6 +13,14 @@
 
 #define PG_OAUTH_PAM_GUC_PREFIX "pg_oauth_pam"
 
+/*
+ * The PostgreSQL major this module was compiled for. A test build may define it
+ * differently to prove that a mismatch is refused.
+ */
+#ifndef PG_OAUTH_PAM_EXPECTED_MAJOR
+#define PG_OAUTH_PAM_EXPECTED_MAJOR (PG_VERSION_NUM / 10000)
+#endif
+
 static int	cache_max_entries = 32;
 
 #if PG_VERSION_NUM >= 170000
@@ -65,6 +73,30 @@ _PG_init(void)
 }
 
 #endif
+
+/*
+ * Before PostgreSQL 17 the server's own loader checks the module's magic block.
+ * From 17 libpam loads the module and PostgreSQL never sees it, so nothing else
+ * stops a binary built for one major from running in another, whose shared
+ * memory and locking calls differ (GetNamedDSMSegment gained an argument in 19).
+ * Compare the running server's version once per process and refuse on mismatch.
+ */
+bool
+pg_oauth_pam_server_matches(void)
+{
+	static int	verdict = -1;
+
+	if (verdict < 0)
+	{
+		const char *value = GetConfigOption("server_version_num", false, false);
+		char	   *end = NULL;
+		long		number = value != NULL ? strtol(value, &end, 10) : 0;
+
+		verdict = value != NULL && end != value && *end == '\0' &&
+			number / 10000 == PG_OAUTH_PAM_EXPECTED_MAJOR ? 1 : 0;
+	}
+	return verdict == 1;
+}
 
 bool
 pg_oauth_pam_cache_io(PgOAuthCacheIo *io)

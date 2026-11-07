@@ -18,4 +18,10 @@
  */
 extern bool pg_oauth_pam_cache_io(PgOAuthCacheIo *io);
 
+/*
+ * True only when the running server is the PostgreSQL major version this module
+ * was built for. The caller must deny otherwise.
+ */
+extern bool pg_oauth_pam_server_matches(void);
+
 #endif

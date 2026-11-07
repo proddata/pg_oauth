@@ -59,3 +59,32 @@ def test_a_module_copy_the_server_did_not_preload_never_runs_a_private_cache():
         assert client.connect(cluster, token)[0]
         assert idp.request_counts() == primed
         assert "terminated by signal" not in cluster.logs()
+
+
+def test_a_module_built_for_another_major_never_authenticates():
+    """From PostgreSQL 17 libpam loads the module and PostgreSQL's own magic-block
+    check never runs, so the module compares the running server's version with
+    the one it was built for. The Makefile builds a copy that believes it was
+    built for another major; it must deny before any provider request, while the
+    real module keeps working. (On 15 and 16 a separate file is also refused for
+    lacking the preloaded state; the version check is what refuses it from 17.)"""
+    wrong = os.environ["PAM_MODULE_WRONG_MAJOR"]  # a missing variable must fail, not skip
+    with pam_environment(with_stack=True) as (cluster, client, idp, service_file, module, policy):
+        def use(path):
+            service_file.write_text(f"auth [success=ok default=die] {path} {policy}\n"
+                                    f"account [success=ok default=die] {path} {policy}\n")
+
+        token = idp.sign(subject="appuser").encode()
+        use(module)
+        assert client.connect(cluster, token)[0], "the matching module could not authenticate"
+        primed = idp.request_counts()
+
+        use(wrong)
+        accepted, _ = client.connect(cluster, token)
+        assert not accepted, "a module built for another PostgreSQL major authenticated"
+        assert idp.request_counts() == primed, "it contacted the provider before refusing"
+
+        use(module)
+        assert client.connect(cluster, token)[0], "the matching module stopped working"
+        assert idp.request_counts() == primed
+        assert "terminated by signal" not in cluster.logs()
