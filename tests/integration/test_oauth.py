@@ -793,10 +793,13 @@ def test_unusual_freshness_headers_do_not_deny_authentication(
     with tempfile.TemporaryDirectory(prefix="pg-oauth-freshness-") as directory:
         idp = LocalIdp(pathlib.Path(directory))
         idp.freshness_headers = headers
+        # The minimum retention is disabled here so that "immediately stale"
+        # stays observable; the default minimum is covered in test_robustness.
         cluster = TemporaryPostgres(
             pg_config, validator_library, issuer=idp.issuer,
             identity_map=("principal", "appuser"), ca_file=idp.tls_certificate,
             server_certificate=idp.tls_certificate, server_key=idp.tls_key,
+            extra_config="pg_oauth_validator.cache_min_ttl = '0'\n",
         )
         previous_ca = os.environ.get("SSL_CERT_FILE")
         os.environ["SSL_CERT_FILE"] = str(idp.tls_certificate)

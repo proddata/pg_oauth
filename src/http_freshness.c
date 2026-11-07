@@ -183,12 +183,12 @@ seconds_to_milliseconds(int64_t seconds)
 	return seconds * 1000;
 }
 
-PgOAuthHttpFreshnessError
-pg_oauth_http_freshness_calculate(const char *cache_control, const char *date,
-								  const char *expires, const char *age,
-								  int64_t response_time_seconds,
-								  const PgOAuthHttpFreshnessPolicy *policy,
-								  PgOAuthHttpFreshness *result)
+static PgOAuthHttpFreshnessError
+calculate_provider_freshness(const char *cache_control, const char *date,
+							 const char *expires, const char *age,
+							 int64_t response_time_seconds,
+							 const PgOAuthHttpFreshnessPolicy *policy,
+							 PgOAuthHttpFreshness *result)
 {
 	CacheControlValues control;
 	int64_t		age_seconds;
@@ -269,6 +269,52 @@ pg_oauth_http_freshness_calculate(const char *cache_control, const char *date,
 	if (control.no_cache)
 		result->ttl_ms = 0;
 	return PG_OAUTH_HTTP_FRESHNESS_OK;
+}
+
+/*
+ * A provider that forbids caching (or sends unusable headers) would otherwise
+ * be fetched on every authentication, and concurrent logins would fail while
+ * waiting for a refresh that publishes nothing. The key material is public, so
+ * the response is retained for a short, administrator-set minimum instead.
+ * The floor only fills a zero lifetime and caps a no-store response; it never
+ * lengthens a positive lifetime the provider asked for.
+ */
+static void
+apply_minimum_freshness(const PgOAuthHttpFreshnessPolicy *policy,
+						PgOAuthHttpFreshness *result)
+{
+	if (policy->minimum_ttl_ms == 0)
+		return;
+	if (!result->cacheable)
+	{
+		result->cacheable = true;
+		if (result->ttl_ms == 0 || result->ttl_ms > policy->minimum_ttl_ms)
+			result->ttl_ms = policy->minimum_ttl_ms;
+	}
+	else if (result->ttl_ms == 0)
+		result->ttl_ms = policy->minimum_ttl_ms;
+}
+
+PgOAuthHttpFreshnessError
+pg_oauth_http_freshness_calculate(const char *cache_control, const char *date,
+								  const char *expires, const char *age,
+								  int64_t response_time_seconds,
+								  const PgOAuthHttpFreshnessPolicy *policy,
+								  PgOAuthHttpFreshness *result)
+{
+	PgOAuthHttpFreshnessError error;
+
+	if (result == NULL)
+		return PG_OAUTH_HTTP_FRESHNESS_INVALID_ARGUMENT;
+	memset(result, 0, sizeof(*result));
+	if (policy == NULL || policy->minimum_ttl_ms < 0 ||
+		policy->minimum_ttl_ms > policy->maximum_ttl_ms)
+		return PG_OAUTH_HTTP_FRESHNESS_INVALID_ARGUMENT;
+	error = calculate_provider_freshness(cache_control, date, expires, age,
+										 response_time_seconds, policy, result);
+	if (error == PG_OAUTH_HTTP_FRESHNESS_OK)
+		apply_minimum_freshness(policy, result);
+	return error;
 }
 
 const char *

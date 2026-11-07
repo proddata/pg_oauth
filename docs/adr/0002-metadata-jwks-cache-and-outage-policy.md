@@ -66,7 +66,8 @@ monotonic expiry inside a running server.
 
 - Honor valid `Cache-Control: max-age` and `Expires` values, capped by a local
   administrator maximum.
-- Honor `no-store` by not retaining the response beyond the current validation.
+- Honor `no-store` by not retaining the response beyond the minimum retention
+  below (zero disables retention).
 - Honor `no-cache` and `must-revalidate` by requiring successful revalidation
   before reuse once fresh use ends.
 - Treat malformed or conflicting freshness directives conservatively as an
@@ -74,7 +75,26 @@ monotonic expiry inside a running server.
   its initiating request, but it is not reusable without revalidation.
 - When no usable explicit freshness exists, apply a bounded local default TTL.
 - Never extend a provider's shorter explicit freshness lifetime up to the local
-  default. The local setting is a fallback and upper bound, not a minimum.
+  default. The local setting is a fallback and upper bound, not a minimum. The
+  only exception is the minimum retention below, which applies to a zero
+  lifetime and never to a positive one.
+
+#### Minimum retention
+
+A provider that sends `no-store`, `no-cache`, `max-age=0` or unusable headers
+would be fetched on every authentication, and concurrent logins would fail
+while waiting for a refresh that publishes nothing. Metadata and JWKS are
+public, so such responses are retained for `cache_min_ttl` (default 30 s,
+range 0 to 5 minutes, never above `cache_max_ttl`): a zero lifetime becomes
+the minimum, and a `no-store` lifetime is capped at it. `no-cache` and
+`must-revalidate` still prevent stale use, so the entry is fresh for the
+minimum and must be revalidated afterwards. A positive lifetime without
+`no-store` is unchanged. Setting `cache_min_ttl = 0` restores strict RFC 9111
+behaviour at the cost of a provider request per authentication. The setting is
+part of the canonical cache key. The consequence is that key material the
+provider has withdrawn can stay trusted for up to the minimum (plus stale
+grace when enabled, never for `no-cache` or `must-revalidate` responses).
+Unknown-`kid` refresh is unaffected, so rotation does not wait for it.
 
 Defaults and accepted ranges are maintained in
 [configuration](../configuration.md#metadata-and-jwks-cache).
@@ -108,8 +128,9 @@ refresh never destroys an otherwise permitted fresh or stale entry.
 ### Rotation and request suppression
 
 A JWT referencing an unknown `kid` may cause at most one JWKS refresh during
-that validation attempt. Refresh is additionally limited by the exact issuer
-entry's monotonic cooldown. Attacker-selected `kid` values are not part of the
+that validation attempt. Refresh is additionally limited by the monotonic cooldown of the exact cache
+entry (keyed by issuer, URLs and complete policy, not a separate per-issuer
+record). Attacker-selected `kid` values are not part of the
 cache key and cannot create cache entries or bypass the cooldown.
 
 A fetched key set that is well-formed but cannot serve the token's key
@@ -129,8 +150,10 @@ before DNS, connection, TLS or HTTP work. Other backends may use an eligible
 fresh/stale snapshot. If none exists, they sleep on a shared condition variable
 for a bounded, operator-configured time without holding or polling a PostgreSQL
 lock. Refresh completion wakes waiters, which re-check the exact canonical
-entry and proceed only with an eligible published value. A zero timeout retains
-immediate fail-closed behavior.
+entry and proceed only with an eligible published value. Every completion wakes
+every waiter, so a waiter whose own entry is still refreshing keeps sleeping
+until its own deadline (measured with the monotonic clock) instead of failing
+on an unrelated wakeup. A zero timeout retains immediate fail-closed behavior.
 
 Signature failure with a known key does not automatically trigger refresh in
 Milestone 1. This avoids turning arbitrary invalid signatures into outbound

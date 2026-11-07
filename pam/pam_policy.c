@@ -43,6 +43,7 @@ static const ArgumentSpec specs[] = {
 	SPEC("metadata_default_ttl_ms", ARGUMENT_NUMBER, config.metadata_default_ttl_ms),
 	SPEC("jwks_default_ttl_ms", ARGUMENT_NUMBER, config.jwks_default_ttl_ms),
 	SPEC("cache_max_ttl_ms", ARGUMENT_NUMBER, config.cache_max_ttl_ms),
+	SPEC("cache_min_ttl_ms", ARGUMENT_NUMBER, config.cache_min_ttl_ms),
 	SPEC("jwks_stale_grace_ms", ARGUMENT_NUMBER, config.jwks_stale_grace_ms),
 	SPEC("unknown_kid_refresh_cooldown_ms", ARGUMENT_NUMBER, config.unknown_kid_refresh_cooldown_ms),
 	SPEC("refresh_wait_timeout_ms", ARGUMENT_NUMBER, config.refresh_wait_timeout_ms),
@@ -67,6 +68,7 @@ set_defaults(PgOAuthPamPolicy *policy)
 	policy->config.metadata_default_ttl_ms = 300000;
 	policy->config.jwks_default_ttl_ms = 300000;
 	policy->config.cache_max_ttl_ms = 3600000;
+	policy->config.cache_min_ttl_ms = 30000;
 	policy->config.jwks_stale_grace_ms = 0;
 	policy->config.unknown_kid_refresh_cooldown_ms = 30000;
 	policy->config.refresh_wait_timeout_ms = 5000;
@@ -254,6 +256,7 @@ pg_oauth_pam_policy_digest(const PgOAuthPamPolicy *policy, uint8_t out[32])
 		DIGEST_INT("metadata_default_ttl_ms", v->metadata_default_ttl_ms) &&
 		DIGEST_INT("jwks_default_ttl_ms", v->jwks_default_ttl_ms) &&
 		DIGEST_INT("cache_max_ttl_ms", v->cache_max_ttl_ms) &&
+		DIGEST_INT("cache_min_ttl_ms", v->cache_min_ttl_ms) &&
 		DIGEST_INT("jwks_stale_grace_ms", v->jwks_stale_grace_ms) &&
 		DIGEST_INT("unknown_kid_refresh_cooldown_ms", v->unknown_kid_refresh_cooldown_ms) &&
 		DIGEST_INT("refresh_wait_timeout_ms", v->refresh_wait_timeout_ms) &&

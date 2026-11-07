@@ -285,6 +285,10 @@ DefineCustomIntVariable(const char *name, const char *short_desc,
 			 boot_value == 3600000 && min_value == 1000 && max_value == 86400000 &&
 			 context == PGC_SIGHUP && flags == GUC_UNIT_MS)
 		cache_gucs_checked++;
+	else if (strcmp(name, "pg_oauth_validator.cache_min_ttl") == 0 &&
+			 boot_value == 30000 && min_value == 0 && max_value == 300000 &&
+			 context == PGC_SIGHUP && flags == GUC_UNIT_MS)
+		cache_gucs_checked++;
 	else if (strcmp(name, "pg_oauth_validator.jwks_stale_grace") == 0 &&
 			 boot_value == 0 && min_value == 0 && max_value == 3600000 &&
 			 context == PGC_SIGHUP && flags == GUC_UNIT_MS)
@@ -302,7 +306,7 @@ DefineCustomIntVariable(const char *name, const char *short_desc,
 			 boot_value == 32 && min_value == 8 && max_value == 256 &&
 			 context == PGC_SIGHUP && flags == 0)
 		cache_gucs_checked++;
-	cache_gucs_have_expected_contract = cache_gucs_checked == 7;
+	cache_gucs_have_expected_contract = cache_gucs_checked == 8;
 }
 
 PGDLLEXPORT void
@@ -410,7 +414,7 @@ main(int argc, char **argv)
 		fail("PostgreSQL module initialization symbol is unavailable");
 	memcpy(&module_init, &symbol, sizeof(module_init));
 	module_init();
-	if (registered_gucs != 18 || !token_type_allowlist_default_checked ||
+	if (registered_gucs != 19 || !token_type_allowlist_default_checked ||
 		!missing_token_type_default_checked)
 		fail("module did not register all configuration variables");
 	if (!cache_gucs_have_expected_contract)

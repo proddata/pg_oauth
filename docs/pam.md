@@ -148,7 +148,7 @@ the same defaults; time values are in milliseconds.
 | `max_token_size` | no | `16384` | Credential limit in bytes, 1024 to 65530. |
 | `jwks_hosts` | no | empty | Extra exact hostnames allowed for JWKS retrieval. |
 | `ca_file` | no | system store | CA bundle for provider HTTPS. Must be readable by the server's operating-system account. |
-| `metadata_default_ttl_ms`, `jwks_default_ttl_ms`, `cache_max_ttl_ms`, `jwks_stale_grace_ms`, `unknown_kid_refresh_cooldown_ms`, `refresh_wait_timeout_ms` | no | as in the [configuration guide](configuration.md) | Cache and refresh timing. |
+| `metadata_default_ttl_ms`, `jwks_default_ttl_ms`, `cache_max_ttl_ms`, `cache_min_ttl_ms`, `jwks_stale_grace_ms`, `unknown_kid_refresh_cooldown_ms`, `refresh_wait_timeout_ms` | no | as in the [configuration guide](configuration.md) | Cache and refresh timing. |
 | `allow_insecure_http` | no | `off` | Development only: permit HTTP provider URLs. |
 
 Parsing is strict and fails closed. An unknown, duplicate, missing, malformed or

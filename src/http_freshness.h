@@ -14,6 +14,14 @@ typedef struct PgOAuthHttpFreshnessPolicy
 {
 	int64_t		default_ttl_ms;
 	int64_t		maximum_ttl_ms;
+
+	/*
+	 * Retention for responses that would otherwise be refetched on every
+	 * authentication (no-store, no-cache, max-age=0, unusable headers). Zero
+	 * keeps strict RFC 9111 behavior. Never raises a positive provider
+	 * lifetime.
+	 */
+	int64_t		minimum_ttl_ms;
 } PgOAuthHttpFreshnessPolicy;
 
 typedef struct PgOAuthHttpFreshness

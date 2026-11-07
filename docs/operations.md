@@ -115,14 +115,26 @@ Keycloak stop and recovery after restart.
 The validator otherwise defaults metadata and JWKS freshness to five minutes
 when a provider supplies no freshness headers and caps freshness at one hour.
 Unusable headers make the response immediately stale instead (see
-[configuration](configuration.md#metadata-and-jwks-cache)); a provider that
-always sends them is refetched on every authentication.
+[configuration](configuration.md#metadata-and-jwks-cache)). Responses stale
+from the start, and `no-store`/`no-cache` responses, are retained for
+`pg_oauth_validator.cache_min_ttl` (30 seconds by default) so that a provider
+that always sends them is not queried on every authentication.
 Provider-advertised shorter lifetimes remain authoritative. Increasing
 `jwks_stale_grace` can bridge a provider outage with previously validated
 public keys, but also delays the effect of emergency key removal by up to the
 configured grace. Enable it only after documenting that tradeoff and retaining
 a protected recovery path. Responses marked `no-cache`, `must-revalidate`, or
 `no-store` cannot be used stale.
+
+After a key compromise, a withdrawn key stays trusted until its cached entry
+expires: the provider's lifetime (capped by `cache_max_ttl`), at most
+`cache_min_ttl` for providers that forbid caching, plus `jwks_stale_grace` when
+enabled. To drop cached keys at once, restart PostgreSQL, or change any
+setting that is part of the cache key (for example `cache_min_ttl` by one
+millisecond) and reload: entries under the old key are ineligible immediately
+and the next authentication refetches. Revoke the compromised signing key at
+the provider as well; flushing the cache does not invalidate tokens that other
+systems already accept.
 
 After PostgreSQL restart, the first OAuth authentication for an issuer owns
 the cold metadata/JWKS refresh. Other authentications for the same issuer wait

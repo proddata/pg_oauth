@@ -313,6 +313,9 @@ pg_oauth_policy_build(const PgOAuthPolicyConfig *config,
 		config->cache_max_ttl_ms < config->metadata_default_ttl_ms ||
 		config->cache_max_ttl_ms < config->jwks_default_ttl_ms ||
 		config->cache_max_ttl_ms > 86400000 ||
+		config->cache_min_ttl_ms < 0 ||
+		config->cache_min_ttl_ms > 300000 ||
+		config->cache_min_ttl_ms > config->cache_max_ttl_ms ||
 		config->jwks_stale_grace_ms < 0 ||
 		config->jwks_stale_grace_ms > 3600000 ||
 		config->unknown_kid_refresh_cooldown_ms < 1000 ||
@@ -337,6 +340,7 @@ pg_oauth_policy_build(const PgOAuthPolicyConfig *config,
 	policy->metadata_default_ttl_ms = config->metadata_default_ttl_ms;
 	policy->jwks_default_ttl_ms = config->jwks_default_ttl_ms;
 	policy->cache_max_ttl_ms = config->cache_max_ttl_ms;
+	policy->cache_min_ttl_ms = config->cache_min_ttl_ms;
 	policy->jwks_stale_grace_ms = config->jwks_stale_grace_ms;
 	policy->unknown_kid_refresh_cooldown_ms =
 		config->unknown_kid_refresh_cooldown_ms;

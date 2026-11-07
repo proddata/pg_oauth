@@ -12,6 +12,7 @@ ca_file=/etc/pki/tls/certs/ca.pem
 metadata_default_ttl_ms=300000
 jwks_default_ttl_ms=300000
 cache_max_ttl_ms=3600000
+cache_min_ttl_ms=30000
 jwks_stale_grace_ms=60000
 unknown_kid_refresh_cooldown_ms=30000
 refresh_wait_timeout_ms=5000
