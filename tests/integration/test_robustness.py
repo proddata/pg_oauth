@@ -452,3 +452,45 @@ def test_unusable_jwks_entries_and_status_and_type_spelling(integration_environm
                 os.environ["SSL_CERT_FILE"] = previous_ca
             cluster.stop()
             idp.close()
+
+
+def test_an_owner_aborted_mid_fetch_does_not_block_later_logins(integration_environment):
+    """The backend that is refreshing a cache entry can be ended by PostgreSQL
+    itself (authentication_timeout) while the provider is slow. The entry must
+    not stay marked as refreshing: the next login has to fetch normally."""
+    pg_config, validator_library, client = integration_environment
+    with tempfile.TemporaryDirectory(prefix="pg-oauth-owner-abort-") as directory:
+        idp = LocalIdp(pathlib.Path(directory), cache_max_age=120)
+        cluster = TemporaryPostgres(
+            pg_config, validator_library, issuer=idp.issuer,
+            identity_map=("principal", "appuser"), ca_file=idp.tls_certificate,
+            server_certificate=idp.tls_certificate, server_key=idp.tls_key,
+            extra_config="authentication_timeout = 2s\n",
+        )
+        previous_ca = os.environ.get("SSL_CERT_FILE")
+        os.environ["SSL_CERT_FILE"] = str(idp.tls_certificate)
+
+        def connect():
+            return attempt_oauth(
+                cluster, client, token=idp.sign(), user="appuser",
+                issuer=idp.issuer, sslmode="require",
+            )
+
+        try:
+            cluster.start()
+            psql(cluster, "CREATE ROLE appuser LOGIN")
+            idp.set_delay("metadata", 6)
+            aborted = connect()
+            assert aborted.returncode != 0
+            assert "canceling authentication due to timeout" in cluster.logs()
+            idp.set_delay("metadata", 0)
+            idp.wait_until_idle()
+            recovered = connect()
+            assert recovered.returncode == 0, recovered.stderr + "\n" + cluster.logs()[-3000:]
+        finally:
+            cluster.stop()
+            idp.close()
+            if previous_ca is None:
+                os.environ.pop("SSL_CERT_FILE", None)
+            else:
+                os.environ["SSL_CERT_FILE"] = previous_ca
