@@ -143,6 +143,39 @@ parse_algorithm(const json_t *header)
 	return 0;
 }
 
+/*
+ * RFC 7515 section 4.1.9: media type names are case-insensitive, and RFC 9068
+ * section 2.1's own example spells the type "at+JWT". The allowlist still
+ * selects which spelling (with or without "application/") is accepted. Fold
+ * only ASCII so the result does not depend on the database locale.
+ */
+static bool
+equals_ignoring_ascii_case(const char *value, size_t length, const char *expected)
+{
+	if (length != strlen(expected))
+		return false;
+	for (size_t i = 0; i < length; i++)
+	{
+		unsigned char c = (unsigned char) value[i];
+
+		if (c >= 'A' && c <= 'Z')
+			c = (unsigned char) (c - 'A' + 'a');
+		if (c != (unsigned char) expected[i])
+			return false;
+	}
+	return true;
+}
+
+static bool
+token_type_allowed(const char *value, size_t length,
+				   const PgOAuthJwtEnvelopePolicy *policy)
+{
+	return ((policy->allowed_token_types & PG_OAUTH_TOKEN_TYPE_AT_JWT) != 0 &&
+			equals_ignoring_ascii_case(value, length, "at+jwt")) ||
+		((policy->allowed_token_types & PG_OAUTH_TOKEN_TYPE_APPLICATION_AT_JWT) != 0 &&
+		 equals_ignoring_ascii_case(value, length, "application/at+jwt"));
+}
+
 void
 pg_oauth_jwt_envelope_clear(PgOAuthJwtEnvelope *envelope)
 {
@@ -217,13 +250,8 @@ pg_oauth_jwt_envelope_parse(const char *token, size_t token_length,
 		}
 	}
 	else if (!json_is_string(value) ||
-			 !((json_string_length(value) == strlen("at+jwt") &&
-				memcmp(json_string_value(value), "at+jwt", strlen("at+jwt")) == 0 &&
-				(policy->allowed_token_types & PG_OAUTH_TOKEN_TYPE_AT_JWT) != 0) ||
-			   (json_string_length(value) == strlen("application/at+jwt") &&
-				memcmp(json_string_value(value), "application/at+jwt",
-					   strlen("application/at+jwt")) == 0 &&
-				(policy->allowed_token_types & PG_OAUTH_TOKEN_TYPE_APPLICATION_AT_JWT) != 0)))
+			 !token_type_allowed(json_string_value(value),
+								 json_string_length(value), policy))
 	{
 		error = PG_OAUTH_JWT_ENVELOPE_INVALID_TOKEN_TYPE;
 		goto fail;
