@@ -112,6 +112,17 @@ that validation attempt. Refresh is additionally limited by the exact issuer
 entry's monotonic cooldown. Attacker-selected `kid` values are not part of the
 cache key and cannot create cache entries or bypass the cooldown.
 
+A fetched key set that is well-formed but cannot serve the token's key
+(`kid` not present, algorithm mismatch, key not for signatures) is still the
+provider's current key set and is published like any other refresh; only that
+token is denied. Discarding it would keep a cold or expired cache empty, so the
+cooldown above could never apply and each hostile token would cost two provider
+requests. The cooldown clock starts with the first refresh that begins on an
+unknown `kid`, so a flood against an empty cache causes at most two JWKS
+requests before suppression. Documents that fail validation, and keys carrying
+private material, are never published. Publishing adds no trust: cached bytes
+are parsed and checked again on every lookup.
+
 Only one backend marks an entry as refreshing. The shared lock protects brief
 lookup, copy, state-transition and replacement operations only. It is released
 before DNS, connection, TLS or HTTP work. Other backends may use an eligible

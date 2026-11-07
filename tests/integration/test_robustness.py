@@ -159,3 +159,61 @@ def test_valid_cached_authentication_remains_responsive_under_hostile_load(
                 os.environ.pop("SSL_CERT_FILE", None)
             else:
                 os.environ["SSL_CERT_FILE"] = previous_ca
+
+
+@pytest.mark.xdist_group(name="timing")
+def test_unknown_key_flood_on_a_cold_cache_is_bounded(integration_environment):
+    """The existing hostile-load test warms the cache first. With an empty cache
+    the fetched key set used to be discarded whenever the token's key was not in
+    it, so the unknown-key cooldown never applied and every hostile token cost
+    two provider requests."""
+    pg_config, validator_library, client = integration_environment
+    with tempfile.TemporaryDirectory(prefix="pg-oauth-cold-flood-") as directory:
+        idp = LocalIdp(pathlib.Path(directory), cache_max_age=120)
+        cluster = TemporaryPostgres(
+            pg_config, validator_library, issuer=idp.issuer,
+            identity_map=("principal", "appuser"), ca_file=idp.tls_certificate,
+            server_certificate=idp.tls_certificate, server_key=idp.tls_key,
+        )
+        valid = idp.sign()
+        hostile = [
+            idp.sign(header_key_id=f"cold-unknown-{index}") for index in range(12)
+        ]
+        previous_ca = os.environ.get("SSL_CERT_FILE")
+        os.environ["SSL_CERT_FILE"] = str(idp.tls_certificate)
+
+        def connect(token):
+            return attempt_oauth(
+                cluster, client, token=token, user="appuser",
+                issuer=idp.issuer, sslmode="require",
+            )
+
+        try:
+            cluster.start()
+            psql(cluster, "CREATE ROLE appuser LOGIN")
+            assert idp.request_counts() == {"metadata": 0, "jwks": 0}
+
+            for token in hostile:
+                assert connect(token).returncode != 0
+            flooded = idp.request_counts()
+            # One fetch publishes the key set; one more refresh starts the
+            # unknown-key cooldown; the other ten are suppressed.
+            assert flooded["metadata"] == 1, flooded
+            assert flooded["jwks"] <= 2, flooded
+
+            # A legitimate login is served from the key set the hostile tokens
+            # caused to be cached.
+            accepted = connect(valid)
+            assert accepted.returncode == 0, accepted.stderr + cluster.logs()
+            assert idp.request_counts() == flooded
+
+            logs = cluster.logs()
+            for token in [valid, *hostile]:
+                assert token not in logs
+        finally:
+            cluster.stop()
+            idp.close()
+            if previous_ca is None:
+                os.environ.pop("SSL_CERT_FILE", None)
+            else:
+                os.environ["SSL_CERT_FILE"] = previous_ca
