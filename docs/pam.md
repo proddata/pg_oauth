@@ -24,9 +24,11 @@ release gate in ADR 0009.
 | 19 preview | preview | built and tested |
 
 Build a separate module for each PostgreSQL major version. PostgreSQL 15 to 19
-are built and tested. The module has been exercised on Linux in
-disposable Docker containers only; distribution packages and SELinux enforcing
-mode are not qualified.
+are built and tested. The module has been exercised on Linux in disposable
+containers. For PostgreSQL 18 an independent RPM subpackage is built and tested
+on Fedora 43, Fedora 44 and Rocky Linux 10 (see [RPM platforms](rpm-platforms.md));
+no other distribution package exists. SELinux enforcing mode is not qualified
+for the PAM module.
 
 ## Requirements
 
@@ -52,6 +54,12 @@ or `/usr/lib/<triplet>/security`); set `PAM_MODULE_DIR` if it is not found. It i
 never part of `make install`, so an OAuth-only installation has no PAM module and
 no PAM dependency. Restart is not required for a first install, but replacing
 the module file affects only backends started afterwards.
+
+On the PostgreSQL 18 RPM targets the module can instead be installed from the
+`postgresql18-pg_oauth_validator-pam` package, which places it at
+`%{_libdir}/security/pg_oauth_pam.so`. It does not depend on the validator
+package, and the validator package does not depend on it. Both packages are
+unsigned and unpublished until a release is cut.
 
 ## Configure
 
@@ -231,7 +239,10 @@ the client no detail. The module writes stable diagnostic codes to the system lo
 
 ## Limits and known gaps
 
-- No RPM, SELinux policy or release artifact exists for this module yet.
+- The RPM subpackage (`postgresql18-pg_oauth_validator-pam`, PostgreSQL 18 only)
+  is not part of a signed or published release, and no SELinux policy or
+  enforcing-mode qualification exists for it. The SELinux gate installs only the
+  validator package.
 - Bearer tokens can be replayed until they expire. Use short-lived tokens and TLS.
 - PostgreSQL records the database role as the PAM identity, not the external
   identity: `system_user` is `pam:<role>` (PostgreSQL 16 and later) and the
