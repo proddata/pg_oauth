@@ -368,7 +368,6 @@ pg_oauth_shared_cache_wait_refresh(const void *key, size_t key_length,
 			LWLockAcquire(&shared_state->lock, LW_SHARED);
 			refreshing = pg_oauth_cache_is_refreshing(&cache_view, key, key_length);
 			LWLockRelease(&shared_state->lock);
-			waited_ms = timeout_ms;
 			break;
 		}
 	}
