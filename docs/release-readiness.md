@@ -60,7 +60,10 @@ following hold for the exact reviewed commit:
   refresh owner and slow-DNS behavior.
 - The RPM subpackage and the SELinux enforcing run pass on each packaged
   platform ([RPM platforms](rpm-platforms.md)), with PAM upgrade and rollback
-  rehearsed using matching module and configuration.
+  rehearsed using matching module and configuration. The rehearsal needs a
+  retained baseline that already contains the PAM package, so it cannot be done
+  for the first release that includes PAM: record that exception in that
+  release's notes and rehearse for real at the next release.
 - Any PAM-specific operator documentation change is reviewed with the release,
   including the libpam preload requirement on PostgreSQL 15 and 16.
 
