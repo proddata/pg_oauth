@@ -3,6 +3,24 @@
 [FEATURES.md](../FEATURES.md) defines the security contract;
 [ADRs](adr/) explain design choices. This guide maps that contract to code.
 
+## Source layout
+
+The repository holds two independent PostgreSQL modules built on one shared
+validation core:
+
+| Directory | Contents |
+|---|---|
+| `shared/` | The validation pipeline and everything it uses: JWT envelope, JWKS, signature, claims, identity, metadata and key retrieval, HTTP transport and freshness, the canonical cache key and cache state, shared-memory cache access, and policy. It contains no validator callback or PAM entry point and depends on neither module. `shared/validator.c` is the module-independent pipeline. |
+| `validator/` | The native OAuth validator module (`pg_oauth_validator`, PostgreSQL 18 and 19): the PostgreSQL callback glue (`pg_oauth_validator.c`), the GUCs (`config.c`) and matched-HBA access (`hba_policy.c`). |
+| `pam/` | The PAM module (`pg_oauth_pam`, PostgreSQL 15 to 19): the PAM entry points, the stack-argument parser, credential handling and its cache namespace. |
+
+A source file may include a project header only from its own directory or from
+`shared/`. `scripts/ci/check-source-tree.sh` enforces this, so shared code never
+depends on a module and the two modules never depend on each other. Module,
+library and setting names (`pg_oauth_validator`, `pg_oauth_pam`, the
+`pg_oauth_validator.*` and `pg_oauth_pam.*` settings) are unchanged by the
+directory layout.
+
 ## Validation path and trust boundaries
 
 `pg_oauth_validator.c` initializes callback outputs to denial/NULL and adapts

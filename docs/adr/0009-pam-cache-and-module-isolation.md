@@ -17,8 +17,8 @@ validator.
 
 ## Decision
 
-Reuse the existing C cache implementation (`src/cache_state.c`, `src/cache_key.c`,
-`src/shared_cache.c`) for PAM. The PAM module is PostgreSQL-specific and compiled
+Reuse the existing C cache implementation (`shared/cache_state.c`, `shared/cache_key.c`,
+`shared/shared_cache.c`) for PAM. The PAM module is PostgreSQL-specific and compiled
 against each supported major; it is not a general-purpose system-login PAM
 module. Real-backend feasibility and lifecycle evidence are required before the
 packaging names and installed paths are finalized.
@@ -53,7 +53,7 @@ PostgreSQL holds into the module.
 
 ### Implemented storage on PostgreSQL 17 and later
 
-The PAM module compiles `src/shared_cache.c` privately with its own namespace:
+The PAM module compiles `shared/shared_cache.c` privately with its own namespace:
 the named DSM segment `pg_oauth_pam.cache.v1` and the lock tranche
 `pg_oauth_pam_cache`. Capacity is the module-level setting
 `pg_oauth_pam.cache_max_entries` (8 to 256, default 32) in `postgresql.conf`.
@@ -169,4 +169,4 @@ the server. Never weaken validation to recover.
 - [ADR 0001](0001-jose-json-crypto-http-dependencies.md)
 - [ADR 0002](0002-metadata-jwks-cache-and-outage-policy.md)
 - [ADR 0008](0008-postgresql-pam-token-authentication.md)
-- [Current storage implementation](../../src/shared_cache.c)
+- [Current storage implementation](../../shared/shared_cache.c)

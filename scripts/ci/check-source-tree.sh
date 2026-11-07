@@ -46,6 +46,44 @@ if failures:
     sys.exit(1)
 PY
 
+# The native validator and the PAM module are independent and both build on
+# shared/. A source file may include a project header only from its own
+# directory or from shared/, so shared code never depends on either module and
+# neither module depends on the other (ADR 0008, ADR 0009).
+python3 -I - <<'PY'
+import glob
+import os
+import re
+import sys
+
+ALLOWED = {
+    "shared": {"shared"},
+    "validator": {"validator", "shared"},
+    "pam": {"pam", "shared"},
+}
+HEADERS = {}
+for directory in ALLOWED:
+    for path in glob.glob(directory + "/*.h"):
+        HEADERS.setdefault(os.path.basename(path), set()).add(directory)
+
+failures = []
+for directory, allowed in ALLOWED.items():
+    for path in sorted(glob.glob(directory + "/*.[ch]")):
+        for number, line in enumerate(open(path, encoding="utf-8"), 1):
+            match = re.match(r'\s*#\s*include\s+"([^"]+)"', line)
+            if match is None:
+                continue
+            name = os.path.basename(match.group(1))
+            owners = HEADERS.get(name)
+            if owners is not None and not owners & allowed:
+                failures.append(f"{path}:{number} includes {name} from "
+                                + "/".join(sorted(owners)))
+if failures:
+    print("error: include crosses a module boundary: " + "; ".join(failures),
+          file=sys.stderr)
+    sys.exit(1)
+PY
+
 if find . -type f \( -name '*.orig' -o -name '*.rej' -o -name '*~' \) \
     -not -path './.git/*' | grep -q .; then
     echo "error: source tree contains editor or patch artifacts" >&2

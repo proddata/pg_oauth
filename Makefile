@@ -1,11 +1,11 @@
 MODULE_big = pg_oauth_validator
 DOCS = README.md docs/operations.md PROVIDER-COMPATIBILITY.md LICENSE \
 	THIRD-PARTY-NOTICES.md
-OBJS = src/pg_oauth_validator.o src/config.o src/hba_policy.o src/policy.o \
-	src/cache_state.o src/cache_key.o src/shared_cache.o src/http_freshness.o \
-	src/http_transport.o src/metadata.o src/jwks.o src/base64url.o \
-	src/jwt_envelope.o src/signature.o src/claims.o src/identity.o \
-	src/issuer_key.o src/validator.o src/validator_policy.o
+OBJS = validator/pg_oauth_validator.o validator/config.o validator/hba_policy.o shared/policy.o \
+	shared/cache_state.o shared/cache_key.o shared/shared_cache.o shared/http_freshness.o \
+	shared/http_transport.o shared/metadata.o shared/jwks.o shared/base64url.o \
+	shared/jwt_envelope.o shared/signature.o shared/claims.o shared/identity.o \
+	shared/issuer_key.o shared/validator.o shared/validator_policy.o
 TEST_BIN = tests/fail_closed_test
 POLICY_TEST_BIN = tests/policy_test
 JWT_ENVELOPE_TEST_BIN = tests/jwt_envelope_test
@@ -31,14 +31,14 @@ VALIDATOR_LIBRARY ?= $(CURDIR)/$(MODULE_big)$(DLSUFFIX)
 PAM_MODULE = pam/pg_oauth_pam$(DLSUFFIX)
 # The validation pipeline is compiled privately into the PAM module; nothing from
 # the OAuth module or the PostgreSQL glue (config, HBA, shared cache) is used.
-PAM_VALIDATION_SOURCES = src/policy.c src/validator_policy.c src/validator.c \
-	src/issuer_key.c src/http_transport.c src/http_freshness.c src/cache_key.c \
-	src/cache_state.c src/metadata.c src/signature.c src/jwks.c \
-	src/jwt_envelope.c src/claims.c src/identity.c src/base64url.c
+PAM_VALIDATION_SOURCES = shared/policy.c shared/validator_policy.c shared/validator.c \
+	shared/issuer_key.c shared/http_transport.c shared/http_freshness.c shared/cache_key.c \
+	shared/cache_state.c shared/metadata.c shared/signature.c shared/jwks.c \
+	shared/jwt_envelope.c shared/claims.c shared/identity.c shared/base64url.c
 PAM_SOURCES = pam/pg_oauth_pam.c pam/pam_credential.c pam/pam_policy.c \
-	pam/pam_transaction.c pam/pam_cache.c src/shared_cache.c $(PAM_VALIDATION_SOURCES)
+	pam/pam_transaction.c pam/pam_cache.c shared/shared_cache.c $(PAM_VALIDATION_SOURCES)
 PAM_HEADERS = pam/pam_credential.h pam/pam_policy.h pam/pam_transaction.h pam/pam_cache.h \
-	$(wildcard $(srcdir)/src/*.h)
+	$(wildcard $(srcdir)/shared/*.h)
 # Before PostgreSQL 17 the module is also preloaded (ADR 0009), which needs the
 # magic block and _PG_init exported in addition to the three PAM entry points.
 PAM_PG_MAJOR = $(shell $(PG_CONFIG) --version | sed -E 's/^PostgreSQL ([0-9]+).*/\1/')
@@ -117,6 +117,7 @@ override PG_CFLAGS += -Wno-error=unknown-warning-option \
 	-Wno-error=ignored-optimization-argument -Wno-error=ignored-attributes
 endif
 override PG_CPPFLAGS += $(shell pkg-config --cflags jansson libcurl libjwt openssl 2>/dev/null)
+override PG_CPPFLAGS += -I$(srcdir)/shared
 SHLIB_LINK += -Wl,-Bsymbolic \
 	$(LIBJWT_STATIC) $(JANSSON_STATIC) \
 	$(shell pkg-config --libs libcurl openssl 2>/dev/null)
@@ -237,7 +238,7 @@ pam-module: $(PAM_MODULE)
 $(PAM_MODULE): check-pam-pg-version $(PAM_SOURCES) $(PAM_HEADERS) $(PAM_EXPORTS)
 	@mkdir -p pam
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(PG_CPPFLAGS) -I$(includedir_server) \
-		-I$(srcdir)/src -I$(srcdir)/pam -fPIC -shared -DPG_OAUTH_CACHE_NAMESPACE_PAM \
+		-I$(srcdir)/shared -I$(srcdir)/pam -fPIC -shared -DPG_OAUTH_CACHE_NAMESPACE_PAM \
 		$$(pkg-config --cflags jansson libcurl libjwt openssl) \
 		-Wl,-Bsymbolic -Wl,-z,nodelete -Wl,--version-script=$(srcdir)/$(PAM_EXPORTS) \
 		-o $@ $(filter %.c,$^) $(LIBJWT_STATIC) $(JANSSON_STATIC) \
@@ -251,19 +252,19 @@ $(PAM_CREDENTIAL_TEST_BIN): tests/pam/credential_test.c pam/pam_credential.c $(P
 check-pam-credential: check-pam-pg-version $(PAM_CREDENTIAL_TEST_BIN)
 	./$(PAM_CREDENTIAL_TEST_BIN)
 
-$(PAM_POLICY_TEST_BIN): tests/pam/policy_test.c pam/pam_policy.c src/policy.c $(PAM_HEADERS)
+$(PAM_POLICY_TEST_BIN): tests/pam/policy_test.c pam/pam_policy.c shared/policy.c $(PAM_HEADERS)
 	@mkdir -p tests/pam
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(PG_CPPFLAGS) -I$(includedir_server) \
-		-I$(srcdir)/src -I$(srcdir)/pam -o $@ $(filter %.c,$^) \
+		-I$(srcdir)/shared -I$(srcdir)/pam -o $@ $(filter %.c,$^) \
 		$$(pkg-config --libs openssl)
 
 check-pam-policy: $(PAM_POLICY_TEST_BIN)
 	./$(PAM_POLICY_TEST_BIN)
 
-$(PAM_TRANSACTION_TEST_BIN): tests/pam/transaction_test.c pam/pam_transaction.c src/claims.c $(PAM_HEADERS)
+$(PAM_TRANSACTION_TEST_BIN): tests/pam/transaction_test.c pam/pam_transaction.c shared/claims.c $(PAM_HEADERS)
 	@mkdir -p tests/pam
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(PG_CPPFLAGS) -I$(includedir_server) \
-		-I$(srcdir)/src -I$(srcdir)/pam $$(pkg-config --cflags jansson) \
+		-I$(srcdir)/shared -I$(srcdir)/pam $$(pkg-config --cflags jansson) \
 		-o $@ $(filter %.c,$^) $$(pkg-config --libs jansson)
 
 check-pam-transaction: $(PAM_TRANSACTION_TEST_BIN)
@@ -364,51 +365,51 @@ $(TEST_BIN): tests/fail_closed_test.c
 check-fail-closed: $(MODULE_big)$(DLSUFFIX) $(TEST_BIN)
 	./$(TEST_BIN) ./$(MODULE_big)$(DLSUFFIX)
 
-$(POLICY_TEST_BIN): tests/policy_test.c src/policy.c src/validator_policy.c
+$(POLICY_TEST_BIN): tests/policy_test.c shared/policy.c shared/validator_policy.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(PG_CPPFLAGS) -I$(includedir_server) \
-		-I$(srcdir)/src -o $@ $^
+		-I$(srcdir)/shared -o $@ $^
 
 check-policy: $(POLICY_TEST_BIN)
 	./$(POLICY_TEST_BIN)
 
-$(CACHE_STATE_TEST_BIN): tests/cache_state_test.c src/cache_state.c
+$(CACHE_STATE_TEST_BIN): tests/cache_state_test.c shared/cache_state.c
 	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow \
-		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/src -o $@ $^
+		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/shared -o $@ $^
 
 check-cache-state: $(CACHE_STATE_TEST_BIN)
 	./$(CACHE_STATE_TEST_BIN)
 
-$(CACHE_KEY_TEST_BIN): tests/cache_key_test.c src/cache_key.c
+$(CACHE_KEY_TEST_BIN): tests/cache_key_test.c shared/cache_key.c
 	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow \
-		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/src -o $@ $^
+		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/shared -o $@ $^
 
 check-cache-key: $(CACHE_KEY_TEST_BIN)
 	./$(CACHE_KEY_TEST_BIN)
 
-$(HTTP_FRESHNESS_TEST_BIN): tests/http_freshness_test.c src/http_freshness.c
+$(HTTP_FRESHNESS_TEST_BIN): tests/http_freshness_test.c shared/http_freshness.c
 	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow \
-		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/src \
+		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/shared \
 		$$(pkg-config --cflags libcurl) -o $@ $^ \
 		$$(pkg-config --libs libcurl)
 
 check-http-freshness: $(HTTP_FRESHNESS_TEST_BIN)
 	./$(HTTP_FRESHNESS_TEST_BIN)
 
-$(JWT_ENVELOPE_TEST_BIN): tests/jwt_envelope_test.c src/jwt_envelope.c \
-	src/base64url.c
+$(JWT_ENVELOPE_TEST_BIN): tests/jwt_envelope_test.c shared/jwt_envelope.c \
+	shared/base64url.c
 	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow \
-		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/src \
+		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/shared \
 		$$(pkg-config --cflags jansson) -o $@ $^ \
 		$$(pkg-config --libs jansson)
 
 check-jwt-envelope: $(JWT_ENVELOPE_TEST_BIN)
 	./$(JWT_ENVELOPE_TEST_BIN)
 
-$(JWT_ENVELOPE_FUZZ_BIN): tests/fuzz/jwt_envelope_fuzz.c src/jwt_envelope.c \
-	src/base64url.c
+$(JWT_ENVELOPE_FUZZ_BIN): tests/fuzz/jwt_envelope_fuzz.c shared/jwt_envelope.c \
+	shared/base64url.c
 	clang -std=c17 -Wall -Wextra -Werror -Wshadow \
 		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
-		-I$(srcdir)/src \
+		-I$(srcdir)/shared \
 		$$(pkg-config --cflags jansson) -o $@ $^ \
 		$$(pkg-config --libs jansson)
 
@@ -418,39 +419,39 @@ fuzz-jwt-envelope: $(JWT_ENVELOPE_FUZZ_BIN)
 	./$(JWT_ENVELOPE_FUZZ_BIN) -runs=2000 -max_len=16384 \
 		"$(JWT_ENVELOPE_FUZZ_CORPUS)"
 
-$(JWKS_TEST_BIN): tests/jwks_test.c src/jwks.c src/base64url.c
+$(JWKS_TEST_BIN): tests/jwks_test.c shared/jwks.c shared/base64url.c
 	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow \
-		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/src \
+		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/shared \
 		$$(pkg-config --cflags jansson) -o $@ $^ \
 		$$(pkg-config --libs jansson openssl)
 
 check-jwks: $(JWKS_TEST_BIN)
 	./$(JWKS_TEST_BIN)
 
-$(SIGNATURE_TEST_BIN): tests/signature_test.c tests/signing_support.h src/signature.c src/jwks.c \
-	src/jwt_envelope.c src/base64url.c src/claims.c src/identity.c \
+$(SIGNATURE_TEST_BIN): tests/signature_test.c tests/signing_support.h shared/signature.c shared/jwks.c \
+	shared/jwt_envelope.c shared/base64url.c shared/claims.c shared/identity.c \
 	check-libjwt-version
 	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow \
-		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/src \
+		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/shared \
 		$$(pkg-config --cflags jansson libjwt openssl) -o $@ \
 		$(filter %.c,$^) $$(pkg-config --libs jansson libjwt openssl)
 
 check-signature: $(SIGNATURE_TEST_BIN)
 	./$(SIGNATURE_TEST_BIN)
 
-$(CLAIMS_TEST_BIN): tests/claims_test.c src/claims.c
+$(CLAIMS_TEST_BIN): tests/claims_test.c shared/claims.c
 	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow \
-		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/src \
+		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/shared \
 		$$(pkg-config --cflags jansson) -o $@ $^ \
 		$$(pkg-config --libs jansson)
 
 check-claims: $(CLAIMS_TEST_BIN)
 	./$(CLAIMS_TEST_BIN)
 
-$(CLAIMS_FUZZ_BIN): tests/fuzz/claims_fuzz.c src/claims.c
+$(CLAIMS_FUZZ_BIN): tests/fuzz/claims_fuzz.c shared/claims.c
 	clang -std=c17 -Wall -Wextra -Werror -Wshadow \
 		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
-		-I$(srcdir)/src $$(pkg-config --cflags jansson) -o $@ $^ \
+		-I$(srcdir)/shared $$(pkg-config --cflags jansson) -o $@ $^ \
 		$$(pkg-config --libs jansson)
 
 fuzz-claims: $(CLAIMS_FUZZ_BIN)
@@ -458,27 +459,27 @@ fuzz-claims: $(CLAIMS_FUZZ_BIN)
 	@cp "$(srcdir)"/tests/fuzz/corpus/* "$(CLAIMS_FUZZ_CORPUS)/"
 	./$(CLAIMS_FUZZ_BIN) -runs=2000 -max_len=16384 "$(CLAIMS_FUZZ_CORPUS)"
 
-$(IDENTITY_TEST_BIN): tests/identity_test.c src/identity.c
+$(IDENTITY_TEST_BIN): tests/identity_test.c shared/identity.c
 	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow \
-		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/src -o $@ $^
+		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/shared -o $@ $^
 
 check-identity: $(IDENTITY_TEST_BIN)
 	./$(IDENTITY_TEST_BIN)
 
-$(IDENTITY_FUZZ_BIN): tests/fuzz/identity_fuzz.c src/identity.c
+$(IDENTITY_FUZZ_BIN): tests/fuzz/identity_fuzz.c shared/identity.c
 	clang -std=c17 -Wall -Wextra -Werror -Wshadow \
 		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
-		-I$(srcdir)/src -o $@ $^
+		-I$(srcdir)/shared -o $@ $^
 
 fuzz-identity: $(IDENTITY_FUZZ_BIN)
 	@mkdir -p "$(IDENTITY_FUZZ_CORPUS)"
 	@cp "$(srcdir)"/tests/fuzz/corpus/* "$(IDENTITY_FUZZ_CORPUS)/"
 	./$(IDENTITY_FUZZ_BIN) -runs=2000 -max_len=3072 "$(IDENTITY_FUZZ_CORPUS)"
 
-$(PAM_POLICY_FUZZ_BIN): tests/fuzz/pam_policy_fuzz.c pam/pam_policy.c src/policy.c $(PAM_HEADERS)
+$(PAM_POLICY_FUZZ_BIN): tests/fuzz/pam_policy_fuzz.c pam/pam_policy.c shared/policy.c $(PAM_HEADERS)
 	clang -std=gnu17 -Wall -Wextra -Werror -Wshadow \
 		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
-		$(PG_CPPFLAGS) -isystem $(includedir_server) -I$(srcdir)/src -I$(srcdir)/pam \
+		$(PG_CPPFLAGS) -isystem $(includedir_server) -I$(srcdir)/shared -I$(srcdir)/pam \
 		-o $@ $(filter %.c,$^) $$(pkg-config --libs openssl)
 
 fuzz-pam-policy: $(PAM_POLICY_FUZZ_BIN)
@@ -486,10 +487,10 @@ fuzz-pam-policy: $(PAM_POLICY_FUZZ_BIN)
 	@cp "$(srcdir)"/tests/fuzz/pam-policy-seeds/* "$(PAM_POLICY_FUZZ_CORPUS)/"
 	./$(PAM_POLICY_FUZZ_BIN) -runs=20000 -max_len=16384 "$(PAM_POLICY_FUZZ_CORPUS)"
 
-$(POLICY_FUZZ_BIN): tests/fuzz/policy_fuzz.c src/policy.c src/validator_policy.c
+$(POLICY_FUZZ_BIN): tests/fuzz/policy_fuzz.c shared/policy.c shared/validator_policy.c
 	clang -std=gnu17 -Wall -Wextra -Werror -Wshadow \
 		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
-		$(PG_CPPFLAGS) -isystem $(includedir_server) -I$(srcdir)/src \
+		$(PG_CPPFLAGS) -isystem $(includedir_server) -I$(srcdir)/shared \
 		-o $@ $(filter %.c,$^)
 
 fuzz-policy: $(POLICY_FUZZ_BIN)
@@ -498,11 +499,11 @@ fuzz-policy: $(POLICY_FUZZ_BIN)
 	./$(POLICY_FUZZ_BIN) -runs=20000 -max_len=4096 "$(POLICY_FUZZ_CORPUS)"
 
 $(SIGNATURE_FUZZ_BIN): tests/fuzz/signature_fuzz.c tests/signing_support.h \
-	src/signature.c src/jwks.c src/jwt_envelope.c src/base64url.c \
-	src/claims.c src/identity.c check-libjwt-version
+	shared/signature.c shared/jwks.c shared/jwt_envelope.c shared/base64url.c \
+	shared/claims.c shared/identity.c check-libjwt-version
 	clang -std=c17 -Wall -Wextra -Werror -Wshadow \
 		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
-		-I$(srcdir)/src $$(pkg-config --cflags jansson libjwt openssl) -o $@ \
+		-I$(srcdir)/shared $$(pkg-config --cflags jansson libjwt openssl) -o $@ \
 		$(filter %.c,$^) $$(pkg-config --libs jansson libjwt openssl)
 
 fuzz-signature: $(SIGNATURE_FUZZ_BIN)
@@ -510,10 +511,10 @@ fuzz-signature: $(SIGNATURE_FUZZ_BIN)
 	@cp "$(srcdir)"/tests/fuzz/signature-seeds/* "$(SIGNATURE_FUZZ_CORPUS)/"
 	./$(SIGNATURE_FUZZ_BIN) -runs=3000 -max_len=256 "$(SIGNATURE_FUZZ_CORPUS)"
 
-$(HTTP_FRESHNESS_FUZZ_BIN): tests/fuzz/http_freshness_fuzz.c src/http_freshness.c
+$(HTTP_FRESHNESS_FUZZ_BIN): tests/fuzz/http_freshness_fuzz.c shared/http_freshness.c
 	clang -std=c17 -Wall -Wextra -Werror -Wshadow \
 		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
-		-I$(srcdir)/src $$(pkg-config --cflags libcurl) -o $@ $(filter %.c,$^) \
+		-I$(srcdir)/shared $$(pkg-config --cflags libcurl) -o $@ $(filter %.c,$^) \
 		$$(pkg-config --libs libcurl)
 
 fuzz-http-freshness: $(HTTP_FRESHNESS_FUZZ_BIN)
@@ -521,28 +522,28 @@ fuzz-http-freshness: $(HTTP_FRESHNESS_FUZZ_BIN)
 	@cp "$(srcdir)"/tests/fuzz/http-freshness-seeds/* "$(HTTP_FRESHNESS_FUZZ_CORPUS)/"
 	./$(HTTP_FRESHNESS_FUZZ_BIN) -runs=20000 -max_len=1024 "$(HTTP_FRESHNESS_FUZZ_CORPUS)"
 
-$(CACHE_KEY_FUZZ_BIN): tests/fuzz/cache_key_fuzz.c src/cache_key.c
+$(CACHE_KEY_FUZZ_BIN): tests/fuzz/cache_key_fuzz.c shared/cache_key.c
 	clang -std=c17 -Wall -Wextra -Werror -Wshadow \
 		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
-		-I$(srcdir)/src -o $@ $(filter %.c,$^)
+		-I$(srcdir)/shared -o $@ $(filter %.c,$^)
 
 fuzz-cache-key: $(CACHE_KEY_FUZZ_BIN)
 	@mkdir -p "$(CACHE_KEY_FUZZ_CORPUS)"
 	@cp "$(srcdir)"/tests/fuzz/cache-key-seeds/* "$(CACHE_KEY_FUZZ_CORPUS)/"
 	./$(CACHE_KEY_FUZZ_BIN) -runs=20000 -max_len=9000 "$(CACHE_KEY_FUZZ_CORPUS)"
 
-$(METADATA_TEST_BIN): tests/metadata_test.c src/metadata.c
+$(METADATA_TEST_BIN): tests/metadata_test.c shared/metadata.c
 	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow \
-		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/src \
+		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/shared \
 		$$(pkg-config --cflags jansson libcurl) -o $@ $^ \
 		$$(pkg-config --libs jansson libcurl)
 
 check-metadata: $(METADATA_TEST_BIN)
 	./$(METADATA_TEST_BIN)
 
-$(HTTP_TRANSPORT_TEST_BIN): tests/http_transport_test.c src/http_transport.c
+$(HTTP_TRANSPORT_TEST_BIN): tests/http_transport_test.c shared/http_transport.c
 	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow \
-		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/src \
+		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/shared \
 		$$(pkg-config --cflags libcurl) -o $@ $^ \
 		$$(pkg-config --libs libcurl)
 
@@ -557,11 +558,11 @@ $(LIBCURL_RUNTIME_TEST_BIN): tests/libcurl_runtime_test.c
 check-libcurl-runtime: $(LIBCURL_RUNTIME_TEST_BIN)
 	./$(LIBCURL_RUNTIME_TEST_BIN)
 
-$(ISSUER_KEY_TEST_BIN): tests/issuer_key_test.c src/issuer_key.c \
-		src/http_transport.c src/http_freshness.c src/cache_key.c \
-		src/cache_state.c src/metadata.c src/jwks.c src/base64url.c
+$(ISSUER_KEY_TEST_BIN): tests/issuer_key_test.c shared/issuer_key.c \
+		shared/http_transport.c shared/http_freshness.c shared/cache_key.c \
+		shared/cache_state.c shared/metadata.c shared/jwks.c shared/base64url.c
 	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow \
-		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/src \
+		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/shared \
 		$$(pkg-config --cflags jansson libcurl) -o $@ $^ \
 		$$(pkg-config --libs jansson libcurl openssl)
 
@@ -569,13 +570,13 @@ check-issuer-key: $(ISSUER_KEY_TEST_BIN)
 	python3 "$(srcdir)/tests/issuer_key_driver.py" \
 		"$(CURDIR)/$(ISSUER_KEY_TEST_BIN)"
 
-$(VALIDATOR_TEST_BIN): tests/validator_test.c src/validator.c src/issuer_key.c \
-		src/http_transport.c src/http_freshness.c src/cache_key.c \
-		src/cache_state.c src/metadata.c src/signature.c src/jwks.c \
-		src/jwt_envelope.c src/claims.c src/identity.c src/base64url.c \
+$(VALIDATOR_TEST_BIN): tests/validator_test.c shared/validator.c shared/issuer_key.c \
+		shared/http_transport.c shared/http_freshness.c shared/cache_key.c \
+		shared/cache_state.c shared/metadata.c shared/signature.c shared/jwks.c \
+		shared/jwt_envelope.c shared/claims.c shared/identity.c shared/base64url.c \
 		check-libjwt-version
 	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow \
-		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/src \
+		$(DEPENDENCY_SANITIZER_FLAGS) -I$(srcdir)/shared \
 		$$(pkg-config --cflags jansson libcurl libjwt openssl) -o $@ \
 		$(filter %.c,$^) $$(pkg-config --libs jansson libcurl libjwt openssl)
 
@@ -583,10 +584,10 @@ check-validator: $(VALIDATOR_TEST_BIN)
 	python3 "$(srcdir)/tests/validator_driver.py" \
 		"$(CURDIR)/$(VALIDATOR_TEST_BIN)"
 
-$(METADATA_FUZZ_BIN): tests/fuzz/metadata_fuzz.c src/metadata.c
+$(METADATA_FUZZ_BIN): tests/fuzz/metadata_fuzz.c shared/metadata.c
 	clang -std=c17 -Wall -Wextra -Werror -Wshadow \
 		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
-		-I$(srcdir)/src $$(pkg-config --cflags jansson libcurl) -o $@ $^ \
+		-I$(srcdir)/shared $$(pkg-config --cflags jansson libcurl) -o $@ $^ \
 		$$(pkg-config --libs jansson libcurl)
 
 fuzz-metadata: $(METADATA_FUZZ_BIN)
@@ -595,10 +596,10 @@ fuzz-metadata: $(METADATA_FUZZ_BIN)
 	./$(METADATA_FUZZ_BIN) -runs=2000 -max_len=65536 \
 		"$(METADATA_FUZZ_CORPUS)"
 
-$(JWKS_FUZZ_BIN): tests/fuzz/jwks_fuzz.c src/jwks.c src/base64url.c
+$(JWKS_FUZZ_BIN): tests/fuzz/jwks_fuzz.c shared/jwks.c shared/base64url.c
 	clang -std=c17 -Wall -Wextra -Werror -Wshadow \
 		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
-		-I$(srcdir)/src $$(pkg-config --cflags jansson) -o $@ $^ \
+		-I$(srcdir)/shared $$(pkg-config --cflags jansson) -o $@ $^ \
 		$$(pkg-config --libs jansson openssl)
 
 fuzz-jwks: $(JWKS_FUZZ_BIN)
@@ -613,10 +614,10 @@ $(OAUTH_TEST_CLIENT) $(OAUTH_TEST_CLIENT_PATH): tests/integration/oauth_test_cli
 		-L$(shell $(PG_CONFIG) --libdir) \
 		-Wl,-rpath,$(shell $(PG_CONFIG) --libdir) -o $@ $< -lpq
 
-$(CACHE_PROBE) $(CACHE_PROBE_PATH): tests/integration/cache_probe.c src/shared_cache.c \
-		src/cache_state.c
+$(CACHE_PROBE) $(CACHE_PROBE_PATH): tests/integration/cache_probe.c shared/shared_cache.c \
+		shared/cache_state.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(PG_CPPFLAGS) -I$(includedir_server) \
-		-I$(srcdir)/src -fPIC -shared -o $@ $^
+		-I$(srcdir)/shared -fPIC -shared -o $@ $^
 
 integrationcheck: all $(OAUTH_TEST_CLIENT_PATH) $(CACHE_PROBE_PATH)
 	PG_CONFIG="$(PG_CONFIG)" \
@@ -668,30 +669,30 @@ verify-dev: check-dependency-installers check-demo-config check-dev-source check
 	check-http-transport check-issuer-key check-validator
 
 build-pg18:
-	@mkdir -p "$(BUILD_ROOT)/pg18/src" "$(BUILD_ROOT)/pg18/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg18/shared" "$(BUILD_ROOT)/pg18/validator" "$(BUILD_ROOT)/pg18/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg18" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG18_CONFIG)" EXPECTED_PG_MAJOR=18 all
 
 test-pg18:
-	@mkdir -p "$(BUILD_ROOT)/pg18/src" "$(BUILD_ROOT)/pg18/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg18/shared" "$(BUILD_ROOT)/pg18/validator" "$(BUILD_ROOT)/pg18/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg18" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG18_CONFIG)" EXPECTED_PG_MAJOR=18 \
 		verify integrationcheck
 
 dev-verify-pg18:
-	@mkdir -p "$(BUILD_ROOT)/pg18/src" "$(BUILD_ROOT)/pg18/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg18/shared" "$(BUILD_ROOT)/pg18/validator" "$(BUILD_ROOT)/pg18/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg18" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG18_CONFIG)" EXPECTED_PG_MAJOR=18 \
 		verify-dev
 
 dev-check-pg18:
-	@mkdir -p "$(BUILD_ROOT)/pg18/src" "$(BUILD_ROOT)/pg18/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg18/shared" "$(BUILD_ROOT)/pg18/validator" "$(BUILD_ROOT)/pg18/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg18" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG18_CONFIG)" EXPECTED_PG_MAJOR=18 \
 		$(or $(DEV_CHECK_TARGETS),check-policy check-claims check-identity)
 
 dev-integration-pg18:
-	@mkdir -p "$(BUILD_ROOT)/pg18/src" "$(BUILD_ROOT)/pg18/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg18/shared" "$(BUILD_ROOT)/pg18/validator" "$(BUILD_ROOT)/pg18/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg18" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG18_CONFIG)" EXPECTED_PG_MAJOR=18 \
 		INTEGRATION_TEST_ARGS='-m "not slow" -n 2 --dist loadgroup $(INTEGRATION_TEST_ARGS)' integrationcheck
@@ -699,7 +700,7 @@ dev-integration-pg18:
 dev-test-pg18: dev-verify-pg18 dev-integration-pg18
 
 dev-integration-full-pg18:
-	@mkdir -p "$(BUILD_ROOT)/pg18/src" "$(BUILD_ROOT)/pg18/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg18/shared" "$(BUILD_ROOT)/pg18/validator" "$(BUILD_ROOT)/pg18/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg18" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG18_CONFIG)" EXPECTED_PG_MAJOR=18 \
 		INTEGRATION_TEST_ARGS='-n 2 --dist loadgroup $(INTEGRATION_TEST_ARGS)' integrationcheck
@@ -707,35 +708,35 @@ dev-integration-full-pg18:
 dev-test-full-pg18: dev-verify-pg18 dev-integration-full-pg18
 
 clean-pg18:
-	@mkdir -p "$(BUILD_ROOT)/pg18/src" "$(BUILD_ROOT)/pg18/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg18/shared" "$(BUILD_ROOT)/pg18/validator" "$(BUILD_ROOT)/pg18/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg18" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG18_CONFIG)" EXPECTED_PG_MAJOR=18 clean
 
 build-pg19:
-	@mkdir -p "$(BUILD_ROOT)/pg19/src" "$(BUILD_ROOT)/pg19/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg19/shared" "$(BUILD_ROOT)/pg19/validator" "$(BUILD_ROOT)/pg19/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg19" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG19_CONFIG)" EXPECTED_PG_MAJOR=19 all
 
 test-pg19:
-	@mkdir -p "$(BUILD_ROOT)/pg19/src" "$(BUILD_ROOT)/pg19/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg19/shared" "$(BUILD_ROOT)/pg19/validator" "$(BUILD_ROOT)/pg19/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg19" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG19_CONFIG)" EXPECTED_PG_MAJOR=19 \
 		verify integrationcheck
 
 dev-verify-pg19:
-	@mkdir -p "$(BUILD_ROOT)/pg19/src" "$(BUILD_ROOT)/pg19/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg19/shared" "$(BUILD_ROOT)/pg19/validator" "$(BUILD_ROOT)/pg19/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg19" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG19_CONFIG)" EXPECTED_PG_MAJOR=19 \
 		verify-dev
 
 dev-check-pg19:
-	@mkdir -p "$(BUILD_ROOT)/pg19/src" "$(BUILD_ROOT)/pg19/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg19/shared" "$(BUILD_ROOT)/pg19/validator" "$(BUILD_ROOT)/pg19/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg19" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG19_CONFIG)" EXPECTED_PG_MAJOR=19 \
 		$(or $(DEV_CHECK_TARGETS),check-policy check-claims check-identity)
 
 dev-integration-pg19:
-	@mkdir -p "$(BUILD_ROOT)/pg19/src" "$(BUILD_ROOT)/pg19/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg19/shared" "$(BUILD_ROOT)/pg19/validator" "$(BUILD_ROOT)/pg19/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg19" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG19_CONFIG)" EXPECTED_PG_MAJOR=19 \
 		INTEGRATION_TEST_ARGS='-m "not slow" -n 2 --dist loadgroup $(INTEGRATION_TEST_ARGS)' integrationcheck
@@ -743,7 +744,7 @@ dev-integration-pg19:
 dev-test-pg19: dev-verify-pg19 dev-integration-pg19
 
 dev-integration-full-pg19:
-	@mkdir -p "$(BUILD_ROOT)/pg19/src" "$(BUILD_ROOT)/pg19/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg19/shared" "$(BUILD_ROOT)/pg19/validator" "$(BUILD_ROOT)/pg19/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg19" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG19_CONFIG)" EXPECTED_PG_MAJOR=19 \
 		INTEGRATION_TEST_ARGS='-n 2 --dist loadgroup $(INTEGRATION_TEST_ARGS)' integrationcheck
@@ -751,46 +752,46 @@ dev-integration-full-pg19:
 dev-test-full-pg19: dev-verify-pg19 dev-integration-full-pg19
 
 clean-pg19:
-	@mkdir -p "$(BUILD_ROOT)/pg19/src" "$(BUILD_ROOT)/pg19/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg19/shared" "$(BUILD_ROOT)/pg19/validator" "$(BUILD_ROOT)/pg19/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg19" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG19_CONFIG)" EXPECTED_PG_MAJOR=19 clean
 
 pam-check-pg15:
-	@mkdir -p "$(BUILD_ROOT)/pg15/src" "$(BUILD_ROOT)/pg15/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg15/shared" "$(BUILD_ROOT)/pg15/validator" "$(BUILD_ROOT)/pg15/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg15" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG15_CONFIG)" EXPECTED_PG_MAJOR=15 \
 		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols check-pam-install pam-integrationcheck
 
 pam-check-pg16:
-	@mkdir -p "$(BUILD_ROOT)/pg16/src" "$(BUILD_ROOT)/pg16/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg16/shared" "$(BUILD_ROOT)/pg16/validator" "$(BUILD_ROOT)/pg16/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg16" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG16_CONFIG)" EXPECTED_PG_MAJOR=16 \
 		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols check-pam-install pam-integrationcheck
 
 pam-check-pg17:
-	@mkdir -p "$(BUILD_ROOT)/pg17/src" "$(BUILD_ROOT)/pg17/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg17/shared" "$(BUILD_ROOT)/pg17/validator" "$(BUILD_ROOT)/pg17/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg17" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG17_CONFIG)" EXPECTED_PG_MAJOR=17 \
 		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols check-pam-install pam-integrationcheck
 
 pam-both-check-pg18:
-	@mkdir -p "$(BUILD_ROOT)/pg18/src" "$(BUILD_ROOT)/pg18/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg18/shared" "$(BUILD_ROOT)/pg18/validator" "$(BUILD_ROOT)/pg18/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg18" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG18_CONFIG)" EXPECTED_PG_MAJOR=18 pam-bothcheck
 
 pam-check-pg18:
-	@mkdir -p "$(BUILD_ROOT)/pg18/src" "$(BUILD_ROOT)/pg18/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg18/shared" "$(BUILD_ROOT)/pg18/validator" "$(BUILD_ROOT)/pg18/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg18" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG18_CONFIG)" EXPECTED_PG_MAJOR=18 \
 		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols check-pam-install pam-integrationcheck
 
 pam-both-check-pg19:
-	@mkdir -p "$(BUILD_ROOT)/pg19/src" "$(BUILD_ROOT)/pg19/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg19/shared" "$(BUILD_ROOT)/pg19/validator" "$(BUILD_ROOT)/pg19/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg19" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG19_CONFIG)" EXPECTED_PG_MAJOR=19 pam-bothcheck
 
 pam-check-pg19:
-	@mkdir -p "$(BUILD_ROOT)/pg19/src" "$(BUILD_ROOT)/pg19/tests/integration"
+	@mkdir -p "$(BUILD_ROOT)/pg19/shared" "$(BUILD_ROOT)/pg19/validator" "$(BUILD_ROOT)/pg19/tests/integration"
 	$(MAKE) -C "$(BUILD_ROOT)/pg19" -f "$(SOURCE_DIR)/Makefile" \
 		VPATH="$(SOURCE_DIR)" PG_CONFIG="$(PG19_CONFIG)" EXPECTED_PG_MAJOR=19 \
 		check-pam-credential check-pam-policy check-pam-transaction check-pam-symbols check-pam-install pam-integrationcheck
