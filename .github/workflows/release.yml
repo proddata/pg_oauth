@@ -24,6 +24,8 @@ jobs:
       - name: Check out tagged source and tag objects
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          # This job runs `git fetch origin` below, so it keeps the read-only
+          # job token in the git configuration. It has no write permission.
           fetch-depth: 0
 
       - id: check
@@ -80,6 +82,8 @@ jobs:
     steps:
       - name: Check out release scripts
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
 
       - name: Download PostgreSQL 18 package
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
@@ -124,4 +128,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
             --latest=false "${prerelease[@]}" \
             --title "$GITHUB_REF_NAME" \
-            --notes 'Draft build evidence only. Complete docs/release-readiness.md, add approved signatures, and obtain independent release approval before publishing.'
+            --notes 'Draft build evidence only. Complete docs/release-readiness.md and add approved signatures before publishing. From v1.0.0, release approval must come from someone other than the author.'
