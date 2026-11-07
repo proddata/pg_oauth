@@ -11,6 +11,8 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT / "tests/integration"))
 import selinux_support
 import selinux_denial
+sys.path.insert(0, str(ROOT / "tests/pam"))
+import selinux_check
 
 
 class EnforcementTest(unittest.TestCase):
@@ -41,6 +43,25 @@ class EnforcementTest(unittest.TestCase):
         with mock.patch.object(selinux_support, "run", side_effect=FileNotFoundError), \
                 self.assertRaises(FileNotFoundError):
             selinux_support.require_enforcing()
+
+
+class PamDenialFilterTest(unittest.TestCase):
+    DENIAL = ("type=AVC msg=audit(1.2:3): avc:  denied  { read } for pid=42 "
+              "scontext=system_u:system_r:postgresql_t:s0 "
+              "tcontext=system_u:object_r:etc_t:s0 tclass=file permissive=0")
+
+    def test_postgresql_denials_are_reported(self):
+        self.assertEqual(selinux_check.postgres_denials({self.DENIAL}), [self.DENIAL])
+
+    def test_other_domains_and_non_denials_are_ignored(self):
+        records = {self.DENIAL.replace("postgresql_t", "unconfined_t"),
+                   self.DENIAL.replace("denied", "granted"),
+                   "type=USER msg=audit(1.2:4): pam: scontext=postgresql_t",
+                   # postgresql_t as the target of another domain is not a backend denial.
+                   self.DENIAL.replace("scontext=system_u:system_r:postgresql_t:s0",
+                                       "scontext=system_u:system_r:unconfined_t:s0")
+                   .replace("etc_t", "postgresql_t")}
+        self.assertEqual(selinux_check.postgres_denials(records), [])
 
 
 class AuditEvidenceTest(unittest.TestCase):

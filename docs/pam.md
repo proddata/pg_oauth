@@ -27,8 +27,9 @@ Build a separate module for each PostgreSQL major version. PostgreSQL 15 to 19
 are built and tested. The module has been exercised on Linux in disposable
 containers. For PostgreSQL 18 an independent RPM subpackage is built and tested
 on Fedora 43, Fedora 44 and Rocky Linux 10 (see [RPM platforms](rpm-platforms.md));
-no other distribution package exists. SELinux enforcing mode is not qualified
-for the PAM module.
+no other distribution package exists. SELinux enforcing mode is qualified only
+for the Fedora 44 x86-64 RPM in the VM gate, with the optional HTTP-port policy
+(see [SELinux](#selinux)); Rocky Linux 10 and Fedora 43 are not in that gate.
 
 ## Requirements
 
@@ -153,6 +154,23 @@ exactly `on` or `off`; numbers are plain decimal digits. The module accepts valu
 the whole cache key is limited to 4096 bytes, but libpam's configuration line
 limit above is reached first.
 
+## SELinux
+
+On a host with SELinux enforcing, PostgreSQL runs in `postgresql_t` and the module
+runs inside the backend, so its HTTPS requests to the identity provider are
+denied until an administrator allows `postgresql_t` to connect to the provider's
+port. Without that permission **authentication stays denied** (fail closed); the
+token is never accepted unchecked. The validator's optional
+[`pg_oauth_https.cil`](selinux/pg_oauth_https.cil) grants exactly that and nothing
+else; its scope and risks are described in [RPM platforms](rpm-platforms.md#optional-http-port-policy).
+
+The enforcing-mode gate (Fedora 44 x86-64 guest, distribution policy, installed
+RPM) shows that with that one permission the module authenticates and produces no
+other PostgreSQL denial for the paths it exercises. It does not cover Rocky Linux
+10, Fedora 43, a provider on a differently labeled port, custom `ca_file`
+locations outside what PostgreSQL may read, or site-specific policy. Load the
+policy only after review, never generate it from denials.
+
 ## Connect
 
 The client supplies the raw compact JWT as the password, with no `Bearer` prefix:
@@ -240,9 +258,8 @@ the client no detail. The module writes stable diagnostic codes to the system lo
 ## Limits and known gaps
 
 - The RPM subpackage (`postgresql18-pg_oauth_validator-pam`, PostgreSQL 18 only)
-  is not part of a signed or published release, and no SELinux policy or
-  enforcing-mode qualification exists for it. The SELinux gate installs only the
-  validator package.
+  is not part of a signed or published release. See [SELinux](#selinux) for what
+  the enforcing-mode check covers.
 - Bearer tokens can be replayed until they expire. Use short-lived tokens and TLS.
 - PostgreSQL records the database role as the PAM identity, not the external
   identity: `system_user` is `pam:<role>` (PostgreSQL 16 and later) and the

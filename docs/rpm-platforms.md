@@ -46,9 +46,8 @@ package requires the other, and the PAM package carries its own bundled-library
 `Provides`, license and documentation. `scripts/ci/test-rpm-package.sh` installs
 it alone after the validator package is removed, checks its exports, linkage and
 file permissions, runs the real-connection PAM suite against the installed module
-and removes it. It is not covered by the SELinux enforcing-mode VM gate, which
-tests only the validator RPM, and it adds `pam-devel` to the builder
-dependencies. Retained release builders captured before this change cannot
+and removes it. The SELinux enforcing-mode VM gate also installs and checks it
+(see below). It adds `pam-devel` to the builder dependencies. Retained release builders captured before this change cannot
 build the new spec offline until they are recaptured through the builders
 workflow and their lock is updated; retained older baselines without a PAM
 package remain valid. This was verified on Fedora 44 arm64 only.
@@ -183,7 +182,15 @@ The gate first requires a fresh provider `name_connect` AVC and authentication
 denial, installs the reviewed optional grant, runs the suite, removes the grant
 and proves denial again in a fresh cluster so cached keys cannot mask removal.
 It enables audit visibility, checks lost records, restores diagnostic suppression
-and verifies the RPM payload. Audit adjustments grant no access and are not
+and verifies the RPM payload. It then installs the tested PAM package
+and repeats the same cycle with `tests/pam/selinux_check.py`: a valid token is
+denied with a fresh `name_connect` AVC before the grant; with the grant it
+authenticates and **no other `postgresql_t` denial occurs**, while a token for
+another role and a wrong-audience token stay denied; after removal the denial
+returns. The PAM module therefore needs no permission beyond the one below,
+for the paths exercised: libpam loading the module from `lib_t`, reading the
+service file and provider HTTPS. Delivery of the module's syslog diagnostics was
+not separately verified; no denial was recorded. Audit adjustments grant no access and are not
 operator prerequisites. No token files, provider keys or raw PostgreSQL logs
 are uploaded. See ADR 0006 for the confinement/audit design and evidence limits.
 
@@ -202,6 +209,9 @@ the host's requirements, an administrator can load the RPM-owned copy:
 ```sh
 semodule -i /usr/share/doc/postgresql18-pg_oauth_validator/docs/selinux/pg_oauth_https.cil
 ```
+
+The PAM module needs the same single permission, because it runs in the
+PostgreSQL backend that calls libpam.
 
 This permission applies to **every process in `postgresql_t`**, including other
 PostgreSQL instances and extensions, and **every port of that type**. The type
