@@ -185,6 +185,51 @@ not contain `system_user`; correlate using PostgreSQL session IDs when needed.
 With a custom `identity_claim`, the logged identity is that claim's value, not
 necessarily `sub`.
 
+### Choosing identity and role claims
+
+PostgreSQL treats the returned identity as proof of who connected, so use only
+a claim that the issuer controls and that is never reassigned to another
+person. `sub` qualifies: OpenID Connect Core section 5.7 defines the `iss` and
+`sub` pair as the only stable identifier. Profile claims such as `email` or
+`preferred_username` can often be edited by the user or an administrator, or
+reused after an account is deleted. Do not select one as `identity_claim`
+unless your provider's documentation guarantees that it is immutable and
+unique; this validator cannot check that.
+
+The same applies to `role_claim`. If a user can edit the attribute that feeds
+the claim at the provider, that user can grant themselves every role the HBA
+`USER` field permits. Populate it only from an administrator-assigned
+attribute or group mapping.
+
+A `pg_ident.conf` system-username that starts with `/` is a regular
+expression, and PostgreSQL documents that it "can match just part of a
+string". Anchor it with `^` and `$` and escape literal dots, for example
+`/^(.*)@example\.com$`. An unanchored `/example.com/` also matches
+`attacker@example-com.evil.test`.
+
+### Issuer, scope and time-claim values
+
+`issuer` in the HBA rule (or the PAM `issuer=` argument) is the issuer
+identifier, not the discovery URL. The module requests
+`<issuer>/.well-known/openid-configuration`, adding no extra slash when the
+issuer already ends in `/`. An issuer that already is a `/.well-known/` URL
+gets the suffix appended again, metadata retrieval fails, and every token is
+denied. The HBA issuer, the metadata `issuer` member and the token `iss` claim
+must be the same string: there is no trailing-slash or case normalization, so
+`https://idp.example` and `https://idp.example/` are different issuers.
+
+The HBA `scope` is a space-separated list, and every listed scope must be
+present in the token, compared exactly and case-sensitively. The token's `scope`
+claim may be a space-delimited string (RFC 9068 section 2.2.3) or an array of
+strings. A malformed scope value, a duplicate entry, a non-string member or an
+over-long list denies the token.
+
+`exp` is required; `nbf` and `iat` are checked when present. NumericDate values
+must be JSON integers. RFC 7519 section 2 also allows non-integer values;
+this validator rejects fractional values, and strings, so a provider that
+emits `1700000000.5` is denied. Check that your provider issues integer
+timestamps.
+
 ### Configuration transition before first release
 
 This pre-release contract does not accept `identity_format`,
@@ -210,6 +255,20 @@ metadata requires an exception.
 This transport restriction works the same way on PostgreSQL 18 and 19 and is
 independent of PostgreSQL 19's `validator.policy` selector. HTTP redirects are
 not followed.
+
+The validator verifies the provider's certificate chain and host name but does
+not check certificate revocation: it enables no CRL, OCSP or OCSP-stapling
+check. A provider certificate that was revoked but has not expired stays
+trusted until it expires or is removed from the trust store. To limit that
+window, trust a private CA through `ca_file` that you can rotate quickly, use
+short-lived provider certificates, and restrict which networks can reach the
+issuer.
+
+Tokens are validated offline against cached keys. A token revoked at the
+provider stays valid until its `exp`, and key material withdrawn at the
+provider stays trusted until the cache entry expires; the key-flush procedure
+is in [operations](operations.md#initial-configuration). Online revocation
+checking is deferred in `FEATURES.md`.
 
 Metadata and JWKS are accepted only from a `200` response (RFC 8414 section 3.2,
 RFC 7517 section 5). Other `2xx` statuses such as `203`, `204` and `206` can
@@ -283,6 +342,8 @@ versioned path and reload, or restart PostgreSQL, when rotating that bundle.
 - `openid` alone is not a sufficient PostgreSQL connection scope. An HBA rule
   (or PAM `scope=` argument) whose required scopes are only `openid` fails
   policy construction, so every connection through it is denied.
+- No certificate revocation or token introspection is performed; see
+  [JWKS locations and TLS](#jwks-locations-and-tls).
 - A valid token does not permit an identity to assume a role unless normal
   exact-name/usermap authorization or delegated exact role-claim authorization
   succeeds.

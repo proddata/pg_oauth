@@ -7,6 +7,7 @@
 
 #include "ascii.h"
 #include "policy.h"
+#include "validator_policy.h"
 
 #undef fprintf
 
@@ -368,5 +369,40 @@ main(void)
 	if (strcmp(pg_oauth_policy_error_code((PgOAuthPolicyError) 9999),
 			   "policy_unknown_error") != 0)
 		fail("an out-of-range policy error was not reported as unknown");
+
+	/*
+	 * The configured issuer is an identifier, not a discovery URL: the
+	 * well-known suffix is always appended, with no doubled slash. An issuer
+	 * that already is the well-known URL therefore gets it twice, which is
+	 * documented in configuration.md so operators do not configure it.
+	 */
+	{
+		static const struct
+		{
+			const char *issuer;
+			const char *expected;	/* NULL: rejected */
+		}			cases[] = {
+			{"https://idp.example", "https://idp.example/.well-known/openid-configuration"},
+			{"https://idp.example/", "https://idp.example/.well-known/openid-configuration"},
+			{"https://idp.example/realms/a", "https://idp.example/realms/a/.well-known/openid-configuration"},
+			{"https://idp.example/realms/a/", "https://idp.example/realms/a/.well-known/openid-configuration"},
+			{"https://idp.example/.well-known/openid-configuration",
+			"https://idp.example/.well-known/openid-configuration/.well-known/openid-configuration"},
+			{"", NULL},
+		};
+		char		url[PG_OAUTH_MAX_URL_SIZE + 1];
+
+		for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+		{
+			bool		built = pg_oauth_metadata_url_build(cases[i].issuer, url, sizeof(url));
+
+			if (cases[i].expected == NULL ? built :
+				(!built || strcmp(url, cases[i].expected) != 0))
+				fail("the metadata URL was derived from the issuer incorrectly");
+		}
+		if (pg_oauth_metadata_url_build("https://idp.example", url, 20) ||
+			url[0] != '\0')
+			fail("a metadata URL was truncated into a small buffer");
+	}
 	return EXIT_SUCCESS;
 }

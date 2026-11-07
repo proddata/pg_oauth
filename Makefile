@@ -353,7 +353,7 @@ $(TEST_BIN): tests/fail_closed_test.c
 check-fail-closed: $(MODULE_big)$(DLSUFFIX) $(TEST_BIN)
 	./$(TEST_BIN) ./$(MODULE_big)$(DLSUFFIX)
 
-$(POLICY_TEST_BIN): tests/policy_test.c src/policy.c
+$(POLICY_TEST_BIN): tests/policy_test.c src/policy.c src/validator_policy.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(PG_CPPFLAGS) -I$(includedir_server) \
 		-I$(srcdir)/src -o $@ $^
 
