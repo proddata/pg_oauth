@@ -957,10 +957,14 @@ def test_local_idp_transport_failures_deny_and_recover(integration_environment):
     with tempfile.TemporaryDirectory(prefix="pg-oauth-idp-transport-") as directory:
         idp = LocalIdp(pathlib.Path(directory), cache_max_age=0)
         identity = "principal"
+        # max-age=0 must mean "fetch on every login" here, so that every
+        # injected fault is reached; the default minimum retention would
+        # serve these responses from the cache.
         cluster = TemporaryPostgres(
             pg_config, validator_library, issuer=idp.issuer,
             identity_map=(identity, "appuser"), ca_file=idp.tls_certificate,
             server_certificate=idp.tls_certificate, server_key=idp.tls_key,
+            extra_config="pg_oauth_validator.cache_min_ttl = '0'\n",
         )
         previous_ca = os.environ.get("SSL_CERT_FILE")
         os.environ["SSL_CERT_FILE"] = str(idp.tls_certificate)
