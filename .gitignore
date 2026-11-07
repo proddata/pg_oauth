@@ -11,6 +11,7 @@
 /.jwks-fuzz-corpus/
 /.claims-fuzz-corpus/
 /.identity-fuzz-corpus/
+/.pam-policy-fuzz-corpus/
 /.metadata-fuzz-corpus/
 /.tools/
 /build/
@@ -42,5 +43,6 @@
 /tests/fuzz/jwt_envelope_fuzz
 /tests/fuzz/jwks_fuzz
 /tests/fuzz/claims_fuzz
+/tests/fuzz/pam_policy_fuzz
 /tests/fuzz/identity_fuzz
 /tests/fuzz/metadata_fuzz

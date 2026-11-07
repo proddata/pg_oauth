@@ -1,0 +1,5 @@
+issuer=https://idp.example/
+audience=a
+scope=s
+clock_skew_ms=0060000
+max_token_size=-1

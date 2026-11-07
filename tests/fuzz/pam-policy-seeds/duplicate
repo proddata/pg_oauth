@@ -1,0 +1,4 @@
+issuer=https://idp.example/
+issuer=https://other.example/
+audience=a
+scope=s

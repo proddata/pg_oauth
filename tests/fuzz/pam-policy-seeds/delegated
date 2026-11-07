@@ -1,0 +1,5 @@
+issuer=https://idp.example/
+audience=postgres://primary
+scope=connect:postgres
+role_claim=pg_roles
+identity_claim=email

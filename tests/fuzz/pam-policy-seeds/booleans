@@ -1,0 +1,5 @@
+issuer=https://idp.example/
+audience=a
+scope=s
+allow_insecure_http=yes
+allow_missing_token_type=ON
