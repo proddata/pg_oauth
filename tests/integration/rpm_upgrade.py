@@ -218,6 +218,9 @@ def rehearse(baseline, candidate, pg_config, library, client, source_revisions=N
             identity_map=("principal", "appuser"), hba_users="appuser",
             ca_file=idp.tls_certificate, server_certificate=idp.tls_certificate,
             server_key=idp.tls_key,
+            # The rotation checks need a provider fetch on every login, so
+            # they run with the retention floor disabled (strict RFC 9111).
+            extra_config="pg_oauth_validator.cache_min_ttl = '0'\n",
         )
         protected = {PRIVATE_CLAIM, RAW_TOKEN, SIGNATURE, IDP_RESPONSE_SECRET}
         results = []
