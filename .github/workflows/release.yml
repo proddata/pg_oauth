@@ -24,6 +24,8 @@ jobs:
       - name: Check out tagged source and tag objects
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          # This job runs `git fetch origin` below, so it keeps the read-only
+          # job token in the git configuration. It has no write permission.
           fetch-depth: 0
 
       - id: check
@@ -80,6 +82,8 @@ jobs:
     steps:
       - name: Check out release scripts
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
 
       - name: Download PostgreSQL 18 package
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
