@@ -247,7 +247,9 @@ versioned path and reload, or restart PostgreSQL, when rotating that bundle.
 - The accepted credential is an OAuth access token, not an OIDC ID token.
 - Audience and required HBA scopes are mandatory.
 - HTTPS and certificate verification are required in production.
-- `openid` alone is not a sufficient PostgreSQL connection scope.
+- `openid` alone is not a sufficient PostgreSQL connection scope. An HBA rule
+  (or PAM `scope=` argument) whose required scopes are only `openid` fails
+  policy construction, so every connection through it is denied.
 - A valid token does not permit an identity to assume a role unless normal
   exact-name/usermap authorization or delegated exact role-claim authorization
   succeeds.
