@@ -57,6 +57,7 @@ PAM_POLICY_FUZZ_BIN = tests/fuzz/pam_policy_fuzz
 POLICY_FUZZ_BIN = tests/fuzz/policy_fuzz
 SIGNATURE_FUZZ_BIN = tests/fuzz/signature_fuzz
 HTTP_FRESHNESS_FUZZ_BIN = tests/fuzz/http_freshness_fuzz
+CACHE_KEY_FUZZ_BIN = tests/fuzz/cache_key_fuzz
 METADATA_FUZZ_BIN = tests/fuzz/metadata_fuzz
 LIBJWT_FUZZ_CORPUS = .fuzz-corpus
 JWT_ENVELOPE_FUZZ_CORPUS = .jwt-envelope-fuzz-corpus
@@ -67,6 +68,7 @@ PAM_POLICY_FUZZ_CORPUS = .pam-policy-fuzz-corpus
 POLICY_FUZZ_CORPUS = .policy-fuzz-corpus
 SIGNATURE_FUZZ_CORPUS = .signature-fuzz-corpus
 HTTP_FRESHNESS_FUZZ_CORPUS = .http-freshness-fuzz-corpus
+CACHE_KEY_FUZZ_CORPUS = .cache-key-fuzz-corpus
 METADATA_FUZZ_CORPUS = .metadata-fuzz-corpus
 SOURCE_DIR := $(abspath $(dir $(firstword $(MAKEFILE_LIST))))
 BUILD_ROOT ?= $(SOURCE_DIR)/build
@@ -95,11 +97,12 @@ EXTRA_CLEAN = $(TEST_BIN) $(POLICY_TEST_BIN) $(JWT_ENVELOPE_TEST_BIN) \
 	$(OAUTH_TEST_CLIENT) $(CACHE_PROBE) $(LIBJWT_SPIKE_BIN) $(LIBJWT_FUZZ_BIN) \
 	$(JWT_ENVELOPE_FUZZ_BIN) $(JWKS_FUZZ_BIN) $(CLAIMS_FUZZ_BIN) \
 	$(IDENTITY_FUZZ_BIN) $(PAM_POLICY_FUZZ_BIN) $(POLICY_FUZZ_BIN) $(SIGNATURE_FUZZ_BIN) \
-	$(METADATA_FUZZ_BIN) $(HTTP_FRESHNESS_FUZZ_BIN) \
+	$(METADATA_FUZZ_BIN) $(HTTP_FRESHNESS_FUZZ_BIN) $(CACHE_KEY_FUZZ_BIN) \
 	.pytest_cache .pycache \
 	$(LIBJWT_FUZZ_CORPUS) $(JWT_ENVELOPE_FUZZ_CORPUS) \
 	$(JWKS_FUZZ_CORPUS) $(CLAIMS_FUZZ_CORPUS) $(IDENTITY_FUZZ_CORPUS) $(PAM_POLICY_FUZZ_CORPUS) \
 	$(POLICY_FUZZ_CORPUS) $(SIGNATURE_FUZZ_CORPUS) $(HTTP_FRESHNESS_FUZZ_CORPUS) \
+	$(CACHE_KEY_FUZZ_CORPUS) \
 	$(METADATA_FUZZ_CORPUS) \
 	$(PAM_MODULE) $(PAM_CREDENTIAL_TEST_BIN) $(PAM_POLICY_TEST_BIN) $(PAM_TRANSACTION_TEST_BIN) \
 	.ci-analysis \
@@ -138,7 +141,7 @@ include $(PGXS)
 	check-pg-version check-policy check-static-link-dependencies \
 	check-libjwt-spike check-libjwt-version check-symbols clean-pg18 clean-pg19 \
 	dependency-spike fuzz-claims fuzz-identity fuzz-pam-policy fuzz-jwks fuzz-jwt-envelope \
-	fuzz-metadata fuzz-policy fuzz-signature fuzz-http-freshness \
+	fuzz-metadata fuzz-policy fuzz-signature fuzz-http-freshness fuzz-cache-key \
 	fuzz-libjwt-spike \
 	integrationcheck \
 	installedcheck packagecheck \
@@ -185,7 +188,7 @@ sanitizercheck:
 fuzz-smoke:
 	$(MAKE) fuzz-libjwt-spike fuzz-jwt-envelope fuzz-jwks fuzz-claims \
 		fuzz-identity fuzz-pam-policy fuzz-metadata fuzz-policy fuzz-signature \
-		fuzz-http-freshness
+		fuzz-http-freshness fuzz-cache-key
 
 # Prevent compilation from starting with incompatible server headers.
 $(OBJS): | check-pg-version
@@ -517,6 +520,16 @@ fuzz-http-freshness: $(HTTP_FRESHNESS_FUZZ_BIN)
 	@mkdir -p "$(HTTP_FRESHNESS_FUZZ_CORPUS)"
 	@cp "$(srcdir)"/tests/fuzz/http-freshness-seeds/* "$(HTTP_FRESHNESS_FUZZ_CORPUS)/"
 	./$(HTTP_FRESHNESS_FUZZ_BIN) -runs=20000 -max_len=1024 "$(HTTP_FRESHNESS_FUZZ_CORPUS)"
+
+$(CACHE_KEY_FUZZ_BIN): tests/fuzz/cache_key_fuzz.c src/cache_key.c
+	clang -std=c17 -Wall -Wextra -Werror -Wshadow \
+		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
+		-I$(srcdir)/src -o $@ $(filter %.c,$^)
+
+fuzz-cache-key: $(CACHE_KEY_FUZZ_BIN)
+	@mkdir -p "$(CACHE_KEY_FUZZ_CORPUS)"
+	@cp "$(srcdir)"/tests/fuzz/cache-key-seeds/* "$(CACHE_KEY_FUZZ_CORPUS)/"
+	./$(CACHE_KEY_FUZZ_BIN) -runs=20000 -max_len=9000 "$(CACHE_KEY_FUZZ_CORPUS)"
 
 $(METADATA_TEST_BIN): tests/metadata_test.c src/metadata.c
 	$(CC) -std=c17 -Wall -Wextra -Werror -Wshadow \
