@@ -128,4 +128,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
             --latest=false "${prerelease[@]}" \
             --title "$GITHUB_REF_NAME" \
-            --notes 'Draft build evidence only. Complete docs/release-readiness.md, add approved signatures, and obtain independent release approval before publishing.'
+            --notes 'Draft build evidence only. Complete docs/release-readiness.md and add approved signatures before publishing. From v1.0.0, release approval must come from someone other than the author.'
