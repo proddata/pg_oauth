@@ -453,6 +453,54 @@ def test_direct_identity_and_delegated_roles(integration_environment):
 
 
 
+def test_identities_with_invisible_or_reordering_characters_are_denied(integration_environment):
+    """A PostgreSQL role name may legitimately contain such a character, so a
+    token whose subject equals that role exactly would otherwise authenticate
+    as an identity nobody can read correctly in the log. The denial is for the
+    character, not for a mismatch: the plain role beside them is accepted."""
+    pg_config, validator_library, client = integration_environment
+    hostile = {
+        "zero width space": "user\u200bname",
+        "right-to-left override": "user\u202ename",
+        "line separator": "user\u2028name",
+        "byte order mark": "user\ufeffname",
+        "left-to-right isolate": "user\u2066name",
+    }
+    with tempfile.TemporaryDirectory(prefix="pg-oauth-idp-invisible-") as directory:
+        idp = LocalIdp(pathlib.Path(directory))
+        cluster = TemporaryPostgres(
+            pg_config, validator_library, issuer=idp.issuer,
+            ca_file=idp.tls_certificate,
+            server_certificate=idp.tls_certificate, server_key=idp.tls_key,
+        )
+        previous_ca = os.environ.get("SSL_CERT_FILE")
+        os.environ["SSL_CERT_FILE"] = str(idp.tls_certificate)
+        try:
+            cluster.start()
+            psql(cluster, 'CREATE ROLE "username" LOGIN')
+            psql(cluster, 'CREATE ROLE "j\u00e9r\u00f4me" LOGIN')
+            for role in hostile.values():
+                psql(cluster, f'CREATE ROLE "{role}" LOGIN')
+            for name in ("username", "j\u00e9r\u00f4me"):
+                accepted = attempt_oauth(
+                    cluster, client, token=idp.sign(subject=name), user=name,
+                    issuer=idp.issuer, sslmode="require",
+                )
+                assert accepted.returncode == 0, (name, accepted.stderr + cluster.logs()[-2000:])
+            for what, role in hostile.items():
+                assert_denied_because(
+                    cluster, client, idp, idp.sign(subject=role), role,
+                    ["claims=invalid_subject"],
+                ), what
+        finally:
+            cluster.stop()
+            idp.close()
+            if previous_ca is None:
+                os.environ.pop("SSL_CERT_FILE", None)
+            else:
+                os.environ["SSL_CERT_FILE"] = previous_ca
+
+
 def test_malformed_and_oversized_role_claims_are_denied_as_invalid_roles(integration_environment):
     """A role claim is trusted only when it is exactly well formed. A valid
     role listed next to a malformed one does not authorize anything, and the

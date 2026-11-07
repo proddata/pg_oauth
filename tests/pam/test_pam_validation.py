@@ -514,6 +514,20 @@ def test_malformed_role_claims_are_denied(environment, claims):
         assert not connect(environment, token, user="appuser")[0]
 
 
+def test_delegated_roles_with_invisible_characters_are_denied(environment):
+    """One role entry that hides or reorders text denies the whole claim, even
+    when the requested role is also listed: the claim is trusted only if every
+    entry is readable."""
+    with stack_with(environment, "role_claim=pg_roles"):
+        listed = ["appuser", "other"]
+        assert connect(environment, environment[2].sign(
+            subject="p", extra_claims={"pg_roles": listed}))[0]
+        for hostile in ("other\u200b", "o\u202ether", "\ufeffother", "other\u2028"):
+            accepted, _ = connect(environment, environment[2].sign(
+                subject="p", extra_claims={"pg_roles": ["appuser", hostile]}))
+            assert not accepted, hostile
+
+
 def test_role_claim_must_match_between_the_two_stack_lines(environment):
     _, _, idp, *_ = environment
     token = delegated(idp, ["appuser"])
