@@ -10,9 +10,14 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 image=Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2
-curl --fail --location --proto '=https' --tlsv1.2 --connect-timeout 15 --max-time 300 \
-	"https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/$image" -o "$work/base.qcow2"
-printf '%s  %s\n' 28680fe5b371a5a82ebf43a31926e086a168e59949d03969c5093e7071f90b7f "$work/base.qcow2" | sha256sum -c -
+# The image is pinned by SHA-256, so any source is safe. Prefer the fixed primary
+# host: the download.fedoraproject.org redirector picks an arbitrary mirror per
+# request, and one mirror with an expired certificate failed the whole job.
+sh "$(dirname "$0")/fetch-pinned-image.sh" \
+	28680fe5b371a5a82ebf43a31926e086a168e59949d03969c5093e7071f90b7f "$work/base.qcow2" \
+	"https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/$image" \
+	"https://archives.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/$image" \
+	"https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/$image"
 qemu-img create -f qcow2 -F qcow2 -b "$work/base.qcow2" "$work/guest.qcow2" 24G
 ssh-keygen -q -t ed25519 -N '' -f "$work/key"
 cat >"$work/user-data" <<EOF
