@@ -200,6 +200,14 @@ required restart creates a segment with the requested layout.
 
 Do not mix library files or LLVM bitcode from different builds.
 
+Identity and role-name text is validated more strictly than in earlier builds:
+invisible, line-breaking and text-reordering characters are now refused (the
+list is in [configuration](configuration.md#hba-and-identity-mapping)). Before
+upgrading, check that no identity your issuer sends and no PostgreSQL role name
+used with OAuth or PAM contains one, for example with
+`SELECT rolname FROM pg_roles WHERE rolname ~ '[\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\u00ad]'`
+on a UTF-8 database. A match cannot authenticate after the upgrade.
+
 Rebuild and retest the module against the headers of every PostgreSQL minor
 release you deploy, not only each major. The matched HBA issuer and scope are
 read from PostgreSQL's internal HBA structure, and minor releases are not an
