@@ -14,7 +14,39 @@ import time
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.0"
 
+    def raw(self, data):
+        """Send a hand-built response, for interim responses and trailers that
+        BaseHTTPRequestHandler cannot produce."""
+        self.close_connection = True
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ssl.SSLEOFError):
+            pass
+
     def do_GET(self):
+        body = b'{"ok":true}'
+        if self.path == "/underflow-freshness-header":
+            # The first value is exactly the 4096-byte limit; a second value
+            # must be rejected, not appended.
+            self.raw(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                     b"Cache-Control: " + b"x" * 4096 + b"\r\n"
+                     b"Cache-Control: " + b"y" * 100000 + b"\r\n"
+                     b"Content-Length: 11\r\nConnection: close\r\n\r\n" + body)
+            return
+        if self.path == "/interim-freshness-header":
+            # RFC 9110 section 15.2: a 1xx response is not the final response.
+            self.raw(b"HTTP/1.1 100 Continue\r\nCache-Control: max-age=99999\r\n"
+                     b"Age: 0\r\n\r\n"
+                     b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                     b"Content-Length: 11\r\nConnection: close\r\n\r\n" + body)
+            return
+        if self.path == "/trailer-freshness-header":
+            # RFC 9110 section 6.5.1: trailers must not be merged into headers.
+            self.raw(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                     b"Transfer-Encoding: chunked\r\nTrailer: Cache-Control\r\n"
+                     b"Connection: close\r\n\r\n"
+                     b"b\r\n" + body + b"\r\n0\r\nCache-Control: max-age=99999\r\n\r\n")
+            return
         if self.path == "/redirect":
             self.send_response(302)
             self.send_header("Location", "/ok")

@@ -770,6 +770,63 @@ def test_expired_jwks_refetch_and_outage_denies_all_tokens(integration_environme
                 os.environ["SSL_CERT_FILE"] = previous_ca
 
 
+@pytest.mark.parametrize("headers,reusable", [
+    # Well-formed but unusual: RFC 9110 section 5.6.1.2 ignores empty elements.
+    ([("Cache-Control", "max-age=60,")], True),
+    ([("Cache-Control", ", ,max-age=60,,public")], True),
+    # Overflow saturates (RFC 9111 section 1.2.2) and is capped locally.
+    ([("Cache-Control", "max-age=99999999999999999999999999")], True),
+    # Unusable freshness is immediately stale, never a denial (ADR 0002).
+    ([("Cache-Control", "max-age=60, max-age=120")], False),
+    ([("Cache-Control", "max-age=invalid")], False),
+    ([("Cache-Control", "max-age=")], False),
+    ([("Expires", "0")], False),
+    ([("Expires", "-1")], False),
+    ([("Expires", "not a date")], False),
+    ([("Cache-Control", "max-age=60"), ("Age", "1,2")], False),
+], ids=["trailing-comma", "empty-elements", "overflow", "duplicate-max-age",
+        "malformed-max-age", "empty-max-age", "expires-0", "expires-minus-1",
+        "expires-garbage", "ambiguous-age"])
+def test_unusual_freshness_headers_do_not_deny_authentication(
+        integration_environment, headers, reusable):
+    pg_config, validator_library, client = integration_environment
+    with tempfile.TemporaryDirectory(prefix="pg-oauth-freshness-") as directory:
+        idp = LocalIdp(pathlib.Path(directory))
+        idp.freshness_headers = headers
+        cluster = TemporaryPostgres(
+            pg_config, validator_library, issuer=idp.issuer,
+            identity_map=("principal", "appuser"), ca_file=idp.tls_certificate,
+            server_certificate=idp.tls_certificate, server_key=idp.tls_key,
+        )
+        previous_ca = os.environ.get("SSL_CERT_FILE")
+        os.environ["SSL_CERT_FILE"] = str(idp.tls_certificate)
+        try:
+            cluster.start()
+            psql(cluster, "CREATE ROLE appuser LOGIN")
+            token = idp.sign()
+            # Cold cache: the response that was just fetched must serve its
+            # own request even though it cannot be reused afterwards.
+            first = attempt_oauth(cluster, client, token=token, user="appuser",
+                                  issuer=idp.issuer, sslmode="require")
+            assert first.returncode == 0, first.stderr + cluster.logs()
+            assert idp.request_counts() == {"metadata": 1, "jwks": 1}
+            second = attempt_oauth(cluster, client, token=token, user="appuser",
+                                   issuer=idp.issuer, sslmode="require")
+            assert second.returncode == 0, second.stderr + cluster.logs()
+            if reusable:
+                assert idp.request_counts() == {"metadata": 1, "jwks": 1}
+            else:
+                assert idp.request_counts() == {"metadata": 2, "jwks": 2}
+            assert token not in cluster.logs()
+        finally:
+            cluster.stop()
+            idp.close()
+            if previous_ca is None:
+                os.environ.pop("SSL_CERT_FILE", None)
+            else:
+                os.environ["SSL_CERT_FILE"] = previous_ca
+
+
 @pytest.mark.slow
 @pytest.mark.xdist_group(name="timing")
 def test_authentication_timeout_interrupts_provider_fetch(integration_environment):

@@ -7,8 +7,7 @@
 typedef enum PgOAuthHttpFreshnessError
 {
 	PG_OAUTH_HTTP_FRESHNESS_OK = 0,
-	PG_OAUTH_HTTP_FRESHNESS_INVALID_ARGUMENT,
-	PG_OAUTH_HTTP_FRESHNESS_INVALID_HEADER
+	PG_OAUTH_HTTP_FRESHNESS_INVALID_ARGUMENT
 } PgOAuthHttpFreshnessError;
 
 typedef struct PgOAuthHttpFreshnessPolicy

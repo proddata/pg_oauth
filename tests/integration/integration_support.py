@@ -276,6 +276,9 @@ class LocalIdp:
         self.jwks_cache_max_age = (cache_max_age if jwks_cache_max_age is None
                                    else jwks_cache_max_age)
         self.outage = False
+        # (name, value) pairs sent instead of Cache-Control: max-age=N, to
+        # exercise provider freshness headers that are unusual or malformed.
+        self.freshness_headers = None
         self.faults = {"metadata": None, "jwks": None}
         self.delays = {"metadata": 0, "jwks": 0}
         self.requests = {"metadata": 0, "jwks": 0}
@@ -353,7 +356,11 @@ class LocalIdp:
                 self.send_header("Content-Type", content_type)
                 max_age = (idp.jwks_cache_max_age if resource == "jwks"
                            else idp.cache_max_age)
-                self.send_header("Cache-Control", f"max-age={max_age}")
+                if idp.freshness_headers is None:
+                    self.send_header("Cache-Control", f"max-age={max_age}")
+                else:
+                    for name, value in idp.freshness_headers:
+                        self.send_header(name, value)
                 content_length = len(body) + 100 if fault == "truncated" else len(body)
                 self.send_header("Content-Length", str(content_length))
                 self.end_headers()

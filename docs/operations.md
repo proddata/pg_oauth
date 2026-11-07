@@ -113,7 +113,10 @@ availability; the interoperability suite verifies rejection during a complete
 Keycloak stop and recovery after restart.
 
 The validator otherwise defaults metadata and JWKS freshness to five minutes
-when a provider supplies no usable freshness and caps freshness at one hour.
+when a provider supplies no freshness headers and caps freshness at one hour.
+Unusable headers make the response immediately stale instead (see
+[configuration](configuration.md#metadata-and-jwks-cache)); a provider that
+always sends them is refetched on every authentication.
 Provider-advertised shorter lifetimes remain authoritative. Increasing
 `jwks_stale_grace` can bridge a provider outage with previously validated
 public keys, but also delays the effect of emergency key removal by up to the
