@@ -16,8 +16,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A pull request that only edits Markdown skips the jobs below; they
+  # stay required and report as skipped. If classification fails the
+  # output is empty and everything runs.
+  changes:
+    name: Classify the change
+    uses: ./.github/workflows/changes.yml
+
   external-profile:
     name: External Compose profile
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -48,6 +57,8 @@ jobs:
 
   build:
     name: PostgreSQL ${{ matrix.pg }} / ${{ matrix.compiler }} / C17
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -121,6 +132,8 @@ jobs:
   # tests; PostgreSQL 18 and 19 also run with the native validator installed.
   pam:
     name: PAM module / PostgreSQL ${{ matrix.pg }}
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -194,8 +207,13 @@ jobs:
       - name: Check source-tree hygiene
         run: ./scripts/ci/check-source-tree.sh
 
+      - name: Test the documentation-only change classifier
+        run: python3 tests/ci/test_classify_change.py
+
   quality:
     name: C formatting and Clang static analysis
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     container:
