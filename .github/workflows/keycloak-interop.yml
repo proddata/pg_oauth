@@ -2,6 +2,21 @@ name: Keycloak interoperability
 
 on:
   workflow_dispatch:
+  # Weekly on the default branch, and on pull requests that can change what the
+  # suite exercises: provider behavior was last checked by hand once, and a
+  # cache-policy change went untested against Keycloak until a release rehearsal.
+  schedule:
+    - cron: '23 4 * * 1'
+  pull_request:
+    paths:
+      - '.github/workflows/keycloak-interop.yml'
+      - 'shared/**'
+      - 'validator/**'
+      - 'tests/interop/**'
+      - 'tests/integration/**'
+      - 'scripts/interop/**'
+      - 'scripts/ci/install-*.sh'
+      - 'Makefile'
 
 permissions:
   contents: read
