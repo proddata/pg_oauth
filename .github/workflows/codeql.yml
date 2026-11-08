@@ -17,17 +17,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # A pull request that only edits Markdown skips the jobs below; they
-  # stay required and report as skipped. If classification fails the
-  # output is empty and everything runs.
-  changes:
-    name: Classify the change
-    uses: ./.github/workflows/changes.yml
-
+  # Not skipped for Markdown-only pull requests, unlike the build and test
+  # workflows: the Protect Main ruleset has a code scanning rule that needs a
+  # CodeQL result for the head commit, so a skipped analysis blocks the merge.
   analyze:
     name: C security analysis
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     container:
