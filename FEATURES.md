@@ -62,12 +62,11 @@ The active release scope provides strict offline validation of signed JWT access
 - Negative unit and integration test coverage for the threat model.
 - Sanitized, stable diagnostic codes without token or secret disclosure.
 
-## Active scope: PostgreSQL PAM token authentication (experimental)
+## Active scope: PostgreSQL PAM token authentication (prerelease)
 
 An opt-in module accepted by [`ADR 0008`](docs/adr/0008-postgresql-pam-token-authentication.md)
-and [`ADR 0009`](docs/adr/0009-pam-cache-and-module-isolation.md). It remains
-experimental until the first prerelease that includes it, when it takes the
-validator's prerelease status. The release gate in ADR 0009 and the evidence
+and [`ADR 0009`](docs/adr/0009-pam-cache-and-module-isolation.md). It has the
+same prerelease status as the validator and is not production-ready. The release gate in ADR 0009 and the evidence
 listed in ADR 0008 must be met before a production release, and no packaging, SELinux or
 distribution qualification beyond what those documents record is claimed. The
 per-major release archives for PostgreSQL 18 and 19 carry the module; on 15, 16

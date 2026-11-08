@@ -47,7 +47,7 @@ integration tests. All paths were checked when this matrix was written.
 | Negative tests cover the documented threat model and run in CI | `.github/workflows/ci.yml` runs `test-pg18` and `test-pg19`, which include `verify` and `integrationcheck` | **Covered** for the active offline suite. Keycloak interoperability is intentionally opt-in and remains a separate release gate. |
 | PostgreSQL integration tests exercise real connections over TLS | Existing OAuth tests use TLS; `tests/integration/test_tls.py` proves libpq `verify-full` success and rejects PostgreSQL/provider hostname mismatch, untrusted CA, and deterministic already-expired leaf certificates on both majors. | **Covered**. |
 
-## PAM module (experimental) and the ADR 0009 release gate
+## PAM module and the ADR 0009 release gate
 
 [ADR 0009](../adr/0009-pam-cache-and-module-isolation.md) lists what must be
 proved before a production PAM release. PAM validates tokens with the same

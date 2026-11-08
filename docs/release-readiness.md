@@ -46,9 +46,9 @@ publication. Do not normalize reruns until green.
 ## PAM module gate
 
 The PAM module carries the same release status as the validator: it may ship
-in any prerelease that passes the checks above, and the "experimental" label
-is replaced by the validator's prerelease status in the change that cuts the
-first prerelease containing it, not before. [ADR 0009](adr/0009-pam-cache-and-module-isolation.md)'s
+in any prerelease that passes the checks above. It was labelled experimental
+until v0.2.0, the first prerelease to contain it, and has had the validator's
+prerelease status since. [ADR 0009](adr/0009-pam-cache-and-module-isolation.md)'s
 release gate governs what may be claimed for PAM beyond that: do not call a
 release production-ready for PAM, or include PAM in `v1.0.0`, until all of the
 following hold for the exact reviewed commit:
@@ -57,7 +57,7 @@ following hold for the exact reviewed commit:
   `make pam-both-check-pgNN` on 18 and 19, with no unexpected skips (the CI
   `PAM module / PostgreSQL N` jobs), and `make check-modules-disjoint` passes.
 - Every row of the PAM section of the
-  [traceability matrix](security/initial-review-traceability.md#pam-module-experimental-and-the-adr-0009-release-gate)
+  [traceability matrix](security/initial-review-traceability.md#pam-module-and-the-adr-0009-release-gate)
   is **Covered**, or its gap is closed by a recorded, dated decision that names
   a reviewer. Re-read the matrix at release time; when this was written every
   row was **Covered**.
@@ -73,7 +73,7 @@ following hold for the exact reviewed commit:
 A `0.x` prerelease may ship the module with the open gaps stated in its
 release notes: at least the PostgreSQL 15/16 preload requirement, any PAM
 rehearsal not yet done against a real earlier release, and that PAM is not
-production-ready. Dropping the "experimental" label does not remove these
+production-ready. The prerelease status does not remove these
 statements.
 
 ## PostgreSQL-specific artifacts
