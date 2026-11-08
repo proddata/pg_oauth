@@ -1,0 +1,47 @@
+name: Change classification
+
+# Reusable. Tells a pull request that only edits Markdown files to the callers
+# so they can skip build and test jobs. Every other event, and any failure to
+# classify, yields "false" and the full suite runs.
+on:
+  workflow_call:
+    outputs:
+      docs_only:
+        description: "'true' only for a pull request whose files are all Markdown"
+        value: ${{ jobs.classify.outputs.docs_only }}
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    name: Classify the change
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          # A pull request is checked out as a merge commit; two commits give
+          # it and both parents, which is all the diff below needs.
+          fetch-depth: 2
+
+      - name: Classify the changed files
+        id: classify
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -eu
+          docs_only=false
+          # Compare the merge commit with its first parent (the base branch).
+          # --no-renames lists both the old and the new path of a rename.
+          if test "$EVENT" = pull_request && git rev-parse --verify --quiet 'HEAD^2' >/dev/null; then
+            git diff --name-only --no-renames 'HEAD^1' HEAD >changed-files.txt
+            docs_only=$(sh scripts/ci/classify-change.sh <changed-files.txt)
+          fi
+          echo "docs_only=$docs_only" >>"$GITHUB_OUTPUT"
+          echo "documentation-only change: $docs_only" >>"$GITHUB_STEP_SUMMARY"

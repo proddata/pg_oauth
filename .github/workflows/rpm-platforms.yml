@@ -15,8 +15,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A pull request that only edits Markdown skips the jobs below; they
+  # stay required and report as skipped. If classification fails the
+  # output is empty and everything runs.
+  changes:
+    name: Classify the change
+    uses: ./.github/workflows/changes.yml
+
   build:
     name: ${{ matrix.distribution.name }} / PostgreSQL 18${{ matrix.architecture.name_suffix }}
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.architecture.runner }}
     timeout-minutes: 35
     strategy:
@@ -52,11 +61,13 @@ jobs:
 
     steps:
       - name: Check out repository
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
 
       - name: Build compatibility image
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         env:
           BASE_IMAGE: ${{ matrix.distribution.base_image }}
           IMAGE_NAME: ${{ matrix.distribution.image_name }}-${{ matrix.architecture.image_suffix }}
@@ -76,6 +87,7 @@ jobs:
             .
 
       - name: Verify build and installed OAuth runtime
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         env:
           IMAGE_NAME: ${{ matrix.distribution.image_name }}-${{ matrix.architecture.image_suffix }}
           DOCKER_PLATFORM: ${{ matrix.architecture.platform }}
@@ -87,6 +99,7 @@ jobs:
             verify-dev installedcheck
 
       - name: Test RPM source preparation
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         run: |
           python3 tests/ci/test_rpm_sources.py
           python3 tests/ci/test_rpm_upgrade.py
@@ -94,6 +107,7 @@ jobs:
           python3 tests/ci/test_dependency_build_roots.py
 
       - name: Prepare immutable RPM inputs offline
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         env:
           IMAGE_NAME: ${{ matrix.distribution.image_name }}-${{ matrix.architecture.image_suffix }}
           DOCKER_PLATFORM: ${{ matrix.architecture.platform }}
@@ -114,6 +128,7 @@ jobs:
             0.0.1 "$GITHUB_SHA" /opt/rpm-dependencies /output/rpm-candidate
 
       - name: Build RPMs offline and rehearse upgrade and rollback
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         env:
           IMAGE_NAME: ${{ matrix.distribution.image_name }}-${{ matrix.architecture.image_suffix }}
           DOCKER_PLATFORM: ${{ matrix.architecture.platform }}
