@@ -204,6 +204,16 @@ Recheck signed Rocky packages and vendor/source patch evidence; when a fix is
 available, capture and review fresh builders for both architectures and rerun
 the affected release gates. Retain the old inputs and evidence.
 
+### Exception re-review, 2026-11-07
+
+The owner (`proddata`) reported in the repository work session that the exception
+was re-reviewed on 2026-11-07 ahead of the 0.2.0 prerelease and continues
+unchanged: same scope, rationale and **2026-11-22** expiry. This is owner review,
+not independent review, and no new evidence, vendor patch confirmation or
+reproduced analysis was supplied with that statement. The 2026-11-22 deadline
+still applies: after it, promotion is blocked until a fix is verified or a new
+explicit review is recorded.
+
 ## Owner review completion, 2026-10-24
 
 The deployment owner (`proddata`) reported completion of the remaining
