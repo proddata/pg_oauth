@@ -143,7 +143,10 @@ jobs:
           set -eu
           archive=$(find "$RELEASE_OUTPUT" -maxdepth 1 -name '*.tar.gz')
           test "$(printf '%s\n' "$archive" | wc -l)" -eq 1
+          # The module is loaded inside the postgres server process, which is
+          # not root, so the directory mktemp creates (mode 0700) must be opened.
           extract=$(mktemp -d)
+          chmod 0755 "$extract"
           tar -xzf "$archive" -C "$extract"
           module=$(find "$extract" -name pg_oauth_pam.so)
           test "$(printf '%s\n' "$module" | wc -l)" -eq 1
