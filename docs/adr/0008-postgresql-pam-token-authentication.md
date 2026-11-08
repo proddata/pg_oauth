@@ -1,6 +1,6 @@
 # ADR 0008: PostgreSQL PAM authentication with JWT access tokens
 
-- Status: Accepted as an experimental, opt-in module; the gates under "Evidence and gates" remain required before a production release
+- Status: Accepted as an opt-in module (experimental until v0.2.0, a prerelease since); the gates under "Evidence and gates" remain required before a production release
 - Maintainer decision: 2026-11-06
 - Scope: Linux-PAM used by PostgreSQL 15, 16, 17, 18 and 19 preview; the OAuth validator remains PostgreSQL 18 and 19 only
 - Implementation language: C17, the same as the OAuth validator

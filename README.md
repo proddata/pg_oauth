@@ -12,7 +12,7 @@ validation core (see [Architecture](docs/architecture.md#source-layout)):
 | Module | PostgreSQL | Status |
 | --- | --- | --- |
 | `pg_oauth_validator`: native OAuth validator | 18 (stable), 19 (preview) | prerelease |
-| `pg_oauth_pam`: PAM token authentication, see the [PAM guide](docs/pam.md) | 15 to 19 | experimental |
+| `pg_oauth_pam`: PAM token authentication, see the [PAM guide](docs/pam.md) | 15 to 19 | prerelease |
 
 Either module works without the other. Build a separate module for each
 PostgreSQL major version. The project is prerelease software; passing tests
@@ -114,7 +114,7 @@ upgrades and rollback.
 | --- | --- |
 | Settings and role mapping | [Configuration](docs/configuration.md) |
 | Installation, rollout and recovery | [Operations](docs/operations.md) |
-| PAM token authentication for PostgreSQL 15-19 (experimental) | [PAM guide](docs/pam.md) |
+| PAM token authentication for PostgreSQL 15-19 (prerelease) | [PAM guide](docs/pam.md) |
 | Demo and external issuer setup | [Tutorial](demo/README.md) |
 | Tested issuers and limitations | [Provider compatibility](PROVIDER-COMPATIBILITY.md) |
 | Product and security contract | [Features](FEATURES.md) |

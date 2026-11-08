@@ -23,8 +23,13 @@ class ReleaseTest(unittest.TestCase):
         self.policy = json.loads((ROOT / "packaging/rpm/release-baseline.json").read_text())
         self.policy_path = self.root / "policy.json"
         self.policy_path.write_text(json.dumps(self.policy))
+        # Any version that follows the recorded baseline; derived so that moving
+        # the baseline does not require editing these tests.
+        major, minor, patch = map(int, self.policy["version"].split("."))
+        self.candidate = f"{major}.{minor}.{patch + 1}"
 
-    def bundle(self, name, version="0.1.3", revision="c" * 40):
+    def bundle(self, name, version=None, revision="c" * 40):
+        version = version or self.candidate
         root = self.root / name
         for relative in (f"RPMS/aarch64/postgresql18-pg_oauth_validator-{version}-1.aarch64.rpm",
                          f"RPMS/aarch64/postgresql18-pg_oauth_validator-pam-{version}-1.aarch64.rpm",
@@ -41,7 +46,7 @@ class ReleaseTest(unittest.TestCase):
 
     def test_complete_manifest_identity_and_reproducibility(self):
         first, second = self.bundle("first"), self.bundle("second")
-        self.assertEqual(release.identity(first), ("0.1.3", "c" * 40))
+        self.assertEqual(release.identity(first), (self.candidate, "c" * 40))
         release.compare(first, second)
         with self.assertRaises(FileExistsError):
             release.seal(first)
@@ -84,8 +89,8 @@ class ReleaseTest(unittest.TestCase):
             release.verify(bundle)
 
     def test_versioned_baseline_policy_rejects_ambiguous_or_unordered_releases(self):
-        self.assertEqual(release.baseline_policy(self.policy_path, "0.1.3"), self.policy)
-        for candidate in ("0.1.2", "0.1.1", "01.1.3", "0.1.3-rc1", None, "1" * 40):
+        self.assertEqual(release.baseline_policy(self.policy_path, self.candidate), self.policy)
+        for candidate in (self.policy["version"], "0.0.1", "01.1.3", self.candidate + "-rc1", None, "1" * 40):
             with self.subTest(candidate=candidate), self.assertRaises(ValueError):
                 release.baseline_policy(self.policy_path, candidate)
         for key, value in (("tag", "main"), ("source_revision", "HEAD"),
@@ -93,10 +98,10 @@ class ReleaseTest(unittest.TestCase):
             policy = {**self.policy, key: value}
             self.policy_path.write_text(json.dumps(policy))
             with self.subTest(key=key), self.assertRaises(ValueError):
-                release.baseline_policy(self.policy_path, "0.1.3")
-        self.policy_path.write_text('{"version":"0.1.2","version":"0.1.3"}')
+                release.baseline_policy(self.policy_path, self.candidate)
+        self.policy_path.write_text('{"version":"0.0.1","version":"0.0.2"}')
         with self.assertRaises(ValueError):
-            release.baseline_policy(self.policy_path, "0.1.3")
+            release.baseline_policy(self.policy_path, self.candidate)
 
     def test_historical_suite_only_accepts_exact_reviewed_source_version_and_empty_destination(self):
         inputs = self.bundle("baseline", self.policy["version"], self.policy["source_revision"]) / "inputs"
@@ -109,7 +114,7 @@ class ReleaseTest(unittest.TestCase):
             self.assertEqual(extract.call_args.kwargs["input"], b"git archive")
         spec = inputs / "SPECS/pg_oauth_validator.spec"
         original = spec.read_text()
-        for text in (original.replace(self.policy["version"], "0.1.3"),
+        for text in (original.replace(self.policy["version"], self.candidate),
                      original.replace(self.policy["source_revision"], "d" * 40), original + original):
             spec.write_text(text)
             with mock.patch.object(release.subprocess, "check_output") as archive:
@@ -143,7 +148,7 @@ class ReleaseTest(unittest.TestCase):
         (root / "builders.lock.json").write_bytes((ROOT / "packaging/rpm/builders.lock.json").read_bytes())
         digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
         receipt = {
-            "format_version": 1, "baseline_version": self.policy["version"], "candidate_version": "0.1.3",
+            "format_version": 1, "baseline_version": self.policy["version"], "candidate_version": self.candidate,
             "baseline_source_revision": self.policy["source_revision"], "candidate_source_revision": "c" * 40,
             "baseline_classification": "rebuilt-source-release; no previously published RPM",
             "baseline_rpm_sha256": digest(release.package(baseline)),
