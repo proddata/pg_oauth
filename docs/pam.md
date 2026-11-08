@@ -12,7 +12,10 @@ or `pam`, and the modules share no configuration, files or cache.
 [FEATURES.md](../FEATURES.md) defines the contract; [ADR 0008](adr/0008-postgresql-pam-token-authentication.md)
 and [ADR 0009](adr/0009-pam-cache-and-module-isolation.md) record the design.
 This feature is accepted but experimental: it has not passed the production
-release gate in ADR 0009.
+release gate in ADR 0009. The label is replaced by the validator's prerelease
+status when the first prerelease that includes the module is cut; the gate
+then still governs any production-ready claim for PAM
+([release readiness](release-readiness.md#pam-module-gate)).
 
 ## Status and supported versions
 

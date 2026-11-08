@@ -66,8 +66,9 @@ The active release scope provides strict offline validation of signed JWT access
 
 An opt-in module accepted by [`ADR 0008`](docs/adr/0008-postgresql-pam-token-authentication.md)
 and [`ADR 0009`](docs/adr/0009-pam-cache-and-module-isolation.md). It remains
-experimental: the release gate in ADR 0009 and the evidence listed in ADR 0008
-must be met before a production release, and no packaging, SELinux or
+experimental until the first prerelease that includes it, when it takes the
+validator's prerelease status. The release gate in ADR 0009 and the evidence
+listed in ADR 0008 must be met before a production release, and no packaging, SELinux or
 distribution qualification beyond what those documents record is claimed. The
 per-major release archives for PostgreSQL 18 and 19 carry the module; on 15, 16
 and 17 it is built from source. It

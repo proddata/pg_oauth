@@ -45,9 +45,12 @@ publication. Do not normalize reruns until green.
 
 ## PAM module gate
 
-The PAM module is experimental until [ADR 0009](adr/0009-pam-cache-and-module-isolation.md)'s
-release gate is met. Do not call a release production-ready for PAM, or remove
-the experimental label from [PAM](pam.md) and `FEATURES.md`, until all of the
+The PAM module carries the same release status as the validator: it may ship
+in any prerelease that passes the checks above, and the "experimental" label
+is replaced by the validator's prerelease status in the change that cuts the
+first prerelease containing it, not before. [ADR 0009](adr/0009-pam-cache-and-module-isolation.md)'s
+release gate governs what may be claimed for PAM beyond that: do not call a
+release production-ready for PAM, or include PAM in `v1.0.0`, until all of the
 following hold for the exact reviewed commit:
 
 - `make pam-check-pgNN` passes on every PostgreSQL major 15 to 19 and
@@ -67,8 +70,11 @@ following hold for the exact reviewed commit:
 - Any PAM-specific operator documentation change is reviewed with the release,
   including the libpam preload requirement on PostgreSQL 15 and 16.
 
-A `0.x` prerelease may ship the module while it stays experimental, with the
-open gaps stated in its release notes.
+A `0.x` prerelease may ship the module with the open gaps stated in its
+release notes: at least the PostgreSQL 15/16 preload requirement, any PAM
+rehearsal not yet done against a real earlier release, and that PAM is not
+production-ready. Dropping the "experimental" label does not remove these
+statements.
 
 ## PostgreSQL-specific artifacts
 
