@@ -129,6 +129,29 @@ jobs:
             exit 1
           fi
 
+      # The PAM suite normally runs against a module built from the tree. This
+      # runs it against the module inside the archive that will be published,
+      # in the same pinned image that built it. The wrong-major test needs a
+      # second module built with another expected major, which an archive does
+      # not contain; the PAM module CI jobs cover it.
+      - name: Test the PAM module extracted from the archive
+        env:
+          OAUTH_TEST_PAM_DISPOSABLE: "1"
+          RELEASE_OUTPUT: dist/first/pg${{ matrix.package }}
+          PG_CONFIG: /usr/lib/postgresql/${{ matrix.package }}/bin/pg_config
+        run: |
+          set -eu
+          archive=$(find "$RELEASE_OUTPUT" -maxdepth 1 -name '*.tar.gz')
+          test "$(printf '%s\n' "$archive" | wc -l)" -eq 1
+          extract=$(mktemp -d)
+          tar -xzf "$archive" -C "$extract"
+          module=$(find "$extract" -name pg_oauth_pam.so)
+          test "$(printf '%s\n' "$module" | wc -l)" -eq 1
+          sha256sum "$module"
+          PAM_MODULE="$module" PYTHONPYCACHEPREFIX="$RUNNER_TEMP/pycache" \
+            python3 -m pytest -q -o cache_dir="$RUNNER_TEMP/pytest-cache" tests/pam \
+            -k 'not test_a_module_built_for_another_major_never_authenticates'
+
       - name: Record release evidence
         env:
           RELEASE_OUTPUT: dist/first/pg${{ matrix.package }}
