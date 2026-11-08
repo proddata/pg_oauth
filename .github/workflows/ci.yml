@@ -58,7 +58,7 @@ jobs:
   build:
     name: PostgreSQL ${{ matrix.pg }} / ${{ matrix.compiler }} / C17
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -94,35 +94,40 @@ jobs:
 
     steps:
       - name: Check out repository
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
 
       - name: Install build dependencies
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         run: ./scripts/ci/install-debian-dependencies.sh ${{ matrix.package }}
 
       - name: Install pinned PIC static Jansson dependency
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         run: CC=${{ matrix.cc }} ./scripts/ci/install-jansson.sh
 
       - name: Install pinned libjwt spike dependency
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         run: CC=${{ matrix.cc }} ./scripts/ci/install-libjwt.sh
 
       - name: Validate libjwt behavior under sanitizers
-        if: matrix.pg == '19 RC1' && matrix.compiler == 'Clang'
+        if: ${{ needs.changes.outputs.docs_only != 'true' && (matrix.pg == '19 RC1' && matrix.compiler == 'Clang') }}
         run: |
           make sanitizercheck
           make fuzz-smoke
           make clean
 
       - name: Build and test in isolated tree
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         run: make ${{ matrix.target }} CC=${{ matrix.cc }}
 
       - name: Validate staged and installed package
-        if: matrix.compiler == 'GCC'
+        if: ${{ needs.changes.outputs.docs_only != 'true' && (matrix.compiler == 'GCC') }}
         run: make installedcheck
 
       - name: Clean build products
-        if: always()
+        if: ${{ needs.changes.outputs.docs_only != 'true' && (always()) }}
         run: |
           make clean-pg${{ matrix.package }}
           make clean
@@ -133,7 +138,7 @@ jobs:
   pam:
     name: PAM module / PostgreSQL ${{ matrix.pg }}
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -164,28 +169,33 @@ jobs:
 
     steps:
       - name: Check out repository
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
 
       - name: Install build dependencies
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         run: ./scripts/ci/install-debian-dependencies.sh ${{ matrix.pg }}
 
       - name: Install pinned PIC static Jansson dependency
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         run: ./scripts/ci/install-jansson.sh
 
       - name: Install pinned libjwt dependency
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         run: ./scripts/ci/install-libjwt.sh
 
       - name: Build and test the PAM module
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         run: make pam-check-pg${{ matrix.pg }}
 
       - name: Test the native validator and PAM module together
-        if: matrix.both
+        if: ${{ needs.changes.outputs.docs_only != 'true' && (matrix.both) }}
         run: make pam-both-check-pg${{ matrix.pg }}
 
       - name: Clean build products
-        if: always()
+        if: ${{ needs.changes.outputs.docs_only != 'true' && (always()) }}
         run: make clean
 
   # The pinned PostgreSQL images do not ship Git, so actions/checkout falls back
