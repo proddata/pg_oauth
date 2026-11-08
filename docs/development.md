@@ -196,3 +196,5 @@ threaded lookup on Linux. Repeat cancellation testing with deployed libcurl/DNS.
 CI robustness ceilings are five seconds for cache exhaustion and twelve seconds
 for the mixed unknown-key/valid-token burst; these are regression limits, not
 throughput benchmarks or production-readiness claims.
+
+<!-- probe: documentation-only change to exercise CI skipping -->
