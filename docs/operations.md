@@ -108,11 +108,13 @@ scope, and include stable `sub`. The reproducible configuration is in
 `tests/interop/keycloak/realm.json`.
 
 Keycloak 26.5.0 advertises discovery with `no-store` and JWKS with `no-cache`.
-The validator honors those response directives, so a Keycloak outage prevents
-new OAuth authentications even if the server recently fetched the signing
-keys. Keep a strongly protected non-OAuth recovery path and monitor provider
-availability; the interoperability suite verifies rejection during a complete
-Keycloak stop and recovery after restart.
+The validator honors those response directives, but retains such responses for
+`cache_min_ttl` (30 seconds by default, see below), so a Keycloak outage
+prevents new OAuth authentications once that time has passed since the keys
+were fetched, not at once. Keep a strongly protected non-OAuth recovery path
+and monitor provider availability; the interoperability suite sets
+`cache_min_ttl` to 0 and verifies rejection during a complete Keycloak stop and
+recovery after restart.
 
 The validator otherwise defaults metadata and JWKS freshness to five minutes
 when a provider supplies no freshness headers and caps freshness at one hour.

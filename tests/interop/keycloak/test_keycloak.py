@@ -209,11 +209,15 @@ def test_keycloak_26_5_rfc9068_access_token_and_rejections():
     assert not has_audience(wrong_audience_claims, AUDIENCE)
 
     identity = access_claims["sub"]
+    # Keycloak sends no-store/no-cache. The default cache_min_ttl would keep the
+    # fetched keys usable for 30 s, so the outage check below needs 0 to see
+    # the provider's directives honored.
     cluster = TemporaryPostgres(
         pg_config,
         validator_library,
         issuer=ISSUER,
         identity_map=(identity, "appuser"),
+        extra_config="pg_oauth_validator.cache_min_ttl = 0\n",
         ca_file=ca_file,
         server_certificate=ca_file,
         server_key=tls_key,
