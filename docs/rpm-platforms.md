@@ -83,7 +83,8 @@ The gate builds unprivileged with normal RPM hardening/debug checks and private
 PIC dependency builds; it cannot reuse `/usr/local` libraries or networking.
 It checks complete SRPM sources, ABI/dependency bounds, licenses, linkage,
 permissions, symbol, scriptlet absence, installation, real OAuth, file digests
-and removal. Packages contain optional bitcode, documentation, full licenses,
+and removal. Packages contain optional bitcode (except on Enterprise Linux 10, see
+below), documentation, full licenses,
 bundled-library metadata and a `BUILD-SOURCE` inventory. They do not change
 configuration, provision roles or restart services. Unsigned test RPMs are not
 release provenance.
@@ -256,3 +257,13 @@ or removed module must leave a fresh validator unable to retrieve keys; the VM
 regression checks this denial and secret redaction before installation and after
 removal. Kernel/audit visibility changes in the disposable test VM are diagnostic
 steps, not operator prerequisites for the module.
+
+## Enterprise Linux 10 bitcode
+
+PGDG's `postgresql18-devel` for EL10 records LLVM 21 tool paths, but Rocky Linux
+10 ships only LLVM 22, so PGXS cannot install optional JIT bitcode. The EL10
+build therefore sets `PG_OAUTH_WITH_LLVM=no` (spec and CI image) and ships no
+bitcode; the module itself is unaffected, and PostgreSQL falls back to its
+normal non-JIT execution for it. Fedora builds still include bitcode. Remove
+the override once PGDG's EL10 development package matches the distribution's
+LLVM.

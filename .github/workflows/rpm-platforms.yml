@@ -37,16 +37,19 @@ jobs:
             base_image: fedora:43@sha256:a651ddf48ea28a06ed4e1e6519f51c9f47e7a5a138722ade87369b8fbb7e5b42
             rpm_platform: fedora43
             pg_config: /usr/bin/pg_server_config
+            with_llvm: 'yes'
           - name: Fedora 44
             image_name: fedora44
             base_image: fedora:44@sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80
             rpm_platform: fedora44
             pg_config: /usr/bin/pg_server_config
+            with_llvm: 'yes'
           - name: Rocky Linux 10 / PGDG
             image_name: rocky10
             base_image: rockylinux/rockylinux:10@sha256:827d37bc128288ccf160ee318bb3cb92d591164cb217e92f8bc61e3982ae1834
             rpm_platform: el10
             pg_config: /usr/pgsql-18/bin/pg_config
+            with_llvm: 'no'
         architecture:
           - name_suffix: ''
             runner: ubuntu-24.04
@@ -72,6 +75,7 @@ jobs:
           BASE_IMAGE: ${{ matrix.distribution.base_image }}
           IMAGE_NAME: ${{ matrix.distribution.image_name }}-${{ matrix.architecture.image_suffix }}
           PG_CONFIG_PATH: ${{ matrix.distribution.pg_config }}
+          PG_OAUTH_WITH_LLVM: ${{ matrix.distribution.with_llvm }}
           RPM_PLATFORM: ${{ matrix.distribution.rpm_platform }}
           DOCKER_PLATFORM: ${{ matrix.architecture.platform }}
           EXPECTED_HOST_ARCH: ${{ matrix.architecture.host_arch }}
@@ -83,6 +87,7 @@ jobs:
             --build-arg BASE_IMAGE="$BASE_IMAGE" \
             --build-arg RPM_PLATFORM="$RPM_PLATFORM" \
             --build-arg PG_CONFIG_PATH="$PG_CONFIG_PATH" \
+            --build-arg PG_OAUTH_WITH_LLVM="$PG_OAUTH_WITH_LLVM" \
             --tag "pg-oauth-validator-rpm-test:$IMAGE_NAME" \
             .
 

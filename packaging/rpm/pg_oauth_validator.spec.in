@@ -8,10 +8,13 @@
 %global pg_config /usr/bin/pg_server_config
 %global pg_server postgresql-server
 %global pg_devel postgresql-server-devel
+%global pg_oauth_with_llvm yes
 %elif 0%{?rhel} == 10
 %global pg_config /usr/pgsql-18/bin/pg_config
 %global pg_server postgresql18-server
 %global pg_devel postgresql18-devel
+# PGDG's EL10 devel package expects LLVM 21 but EL10 ships LLVM 22; see Makefile.
+%global pg_oauth_with_llvm no
 %else
 %{error:Only Fedora 43/44 and Enterprise Linux 10 are packaging targets}
 %endif
@@ -85,6 +88,7 @@ case "$(%{pg_config} --version)" in
 esac
 
 %build
+export PG_OAUTH_WITH_LLVM=%{pg_oauth_with_llvm}
 export SOURCE_DATE_EPOCH=%{source_epoch}
 export PKG_CONFIG_PATH="$PWD/deps/lib/pkgconfig:$PWD/deps/lib64/pkgconfig"
 export CMAKE_PREFIX_PATH="$PWD/deps"
@@ -131,6 +135,7 @@ cp deps/share/doc/libjwt/LICENSE THIRD-PARTY-LICENSES/LIBJWT-MPL-2.0
 } > BUILD-SOURCE
 
 %install
+export PG_OAUTH_WITH_LLVM=%{pg_oauth_with_llvm}
 export PKG_CONFIG_PATH="$PWD/deps/lib/pkgconfig:$PWD/deps/lib64/pkgconfig"
 export PKG_CONFIG_LIBDIR=%{_libdir}/pkgconfig:%{_datadir}/pkgconfig
 # Own documentation in the package directory, not PGXS's shared contrib path.
@@ -143,6 +148,7 @@ find %{buildroot}%{pg_pkglibdir} -type f | LC_ALL=C sort | \
     sed 's|^%{buildroot}||' > module-files
 
 %check
+export PG_OAUTH_WITH_LLVM=%{pg_oauth_with_llvm}
 export PKG_CONFIG_PATH="$PWD/deps/lib/pkgconfig:$PWD/deps/lib64/pkgconfig"
 export PKG_CONFIG_LIBDIR=%{_libdir}/pkgconfig:%{_datadir}/pkgconfig
 export LD_LIBRARY_PATH="$PWD/deps/lib:$PWD/deps/lib64"
