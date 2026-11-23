@@ -77,13 +77,13 @@ jobs:
             compiler: Clang
             cc: clang
             image: postgres:18.7-bookworm@sha256:194e55feb2597b1465dbee81cc9fd8d204566cd2eb42c8d22fd6c931a38781b1
-          - pg: "19.0"
+          - pg: "19"
             package: "19"
             target: "test-pg19"
             compiler: GCC
             cc: gcc
             image: postgres:19.0-bookworm@sha256:f4859caf96de494e38efa69ed703b08a5bbd9605e152e604f2daec8841c87c41
-          - pg: "19.0"
+          - pg: "19"
             package: "19"
             target: "test-pg19"
             compiler: Clang
@@ -112,7 +112,7 @@ jobs:
         run: CC=${{ matrix.cc }} ./scripts/ci/install-libjwt.sh
 
       - name: Validate libjwt behavior under sanitizers
-        if: ${{ needs.changes.outputs.docs_only != 'true' && (matrix.pg == '19.0' && matrix.compiler == 'Clang') }}
+        if: ${{ needs.changes.outputs.docs_only != 'true' && (matrix.pg == '19' && matrix.compiler == 'Clang') }}
         run: |
           make sanitizercheck
           make fuzz-smoke
