@@ -42,31 +42,31 @@ expect_rejection()
 	fi
 }
 
-make_artifact 18 18.6
-make_artifact 19 19rc1
+make_artifact 18 18.7
+make_artifact 19 19.0
 sh "$preparer" "$version" "$revision" "$artifacts"
 test "$(find "$artifacts/publish" -maxdepth 1 -type f | wc -l)" -eq 9
 (cd "$artifacts/publish" && sha256sum --check SHA256SUMS)
 
-printf '\n' >>"$artifacts/pg18/pg_oauth_validator-$version-pg18.6.tar.gz.manifest"
+printf '\n' >>"$artifacts/pg18/pg_oauth_validator-$version-pg18.7.tar.gz.manifest"
 expect_rejection
-make_artifact 18 18.6
+make_artifact 18 18.7
 
 echo unexpected >"$artifacts/pg19/unexpected.txt"
 expect_rejection
 rm "$artifacts/pg19/unexpected.txt"
 
-printf 'tampered' >>"$artifacts/pg19/pg_oauth_validator-$version-pg19rc1.tar.gz"
+printf 'tampered' >>"$artifacts/pg19/pg_oauth_validator-$version-pg19.0.tar.gz"
 expect_rejection
-make_artifact 19 19rc1
+make_artifact 19 19.0
 
 sed 's|\.tar.gz$|.other.tar.gz|' \
-	"$artifacts/pg19/pg_oauth_validator-$version-pg19rc1.tar.gz.sha256" \
+	"$artifacts/pg19/pg_oauth_validator-$version-pg19.0.tar.gz.sha256" \
 	>"$work_dir/wrong-checksum"
 cp "$work_dir/wrong-checksum" \
-	"$artifacts/pg19/pg_oauth_validator-$version-pg19rc1.tar.gz.sha256"
+	"$artifacts/pg19/pg_oauth_validator-$version-pg19.0.tar.gz.sha256"
 expect_rejection
-make_artifact 19 19rc1
+make_artifact 19 19.0
 
 rm "$artifacts/pg18/RELEASE-EVIDENCE.md"
 expect_rejection

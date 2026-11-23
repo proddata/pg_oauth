@@ -13,32 +13,32 @@ pg_major=$1
 ca_certificates_version=20230311+deb12u1
 case "$pg_major" in
 	15)
-		pg_dev_version=15.19-1.pgdg12+2
+		pg_dev_version=15.20-1.pgdg12+1
 		debian_snapshot=20261104T212339Z
 		ssl_version=3.0.22-1~deb12u2
 		ca_certificates_version=20250419~deb12u2
 		;;
 	16)
-		pg_dev_version=16.15-1.pgdg12+2
+		pg_dev_version=16.16-1.pgdg12+1
 		debian_snapshot=20261104T212339Z
 		ssl_version=3.0.22-1~deb12u2
 		ca_certificates_version=20250419~deb12u2
 		;;
 	17)
-		pg_dev_version=17.11-1.pgdg12+2
+		pg_dev_version=17.12-1.pgdg12+1
 		debian_snapshot=20261104T212339Z
 		ssl_version=3.0.22-1~deb12u2
 		ca_certificates_version=20250419~deb12u2
 		;;
 	18)
-		pg_dev_version=18.6-1.pgdg12+2
-		debian_snapshot=20260803T000000Z
-		ssl_version=3.0.20-1~deb12u2
+		pg_dev_version=18.7-1.pgdg12+5
+		debian_snapshot=20261104T212339Z
+		ssl_version=3.0.22-1~deb12u2
 		;;
 	19)
-		pg_dev_version=19~rc1-1.pgdg12+1
-		debian_snapshot=20261005T000000Z
-		ssl_version=3.0.22-1~deb12u1
+		pg_dev_version=19.0-1.pgdg12+1
+		debian_snapshot=20261104T212339Z
+		ssl_version=3.0.22-1~deb12u2
 		;;
 	*) usage ;;
 esac
@@ -69,6 +69,21 @@ fi
 
 printf '%s\n' 'Acquire::Check-Valid-Until "false";' \
 	>/etc/apt/apt.conf.d/99-pg-oauth-snapshot
+
+# PGDG removes superseded versions from apt.postgresql.org at each minor
+# release; apt-archive.postgresql.org keeps them, so the pinned versions
+# below stay installable. It is signed with the same key, but redirects to
+# HTTPS, so ca-certificates must be installed first.
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+	ca-certificates=$ca_certificates_version
+pgdg_key=/usr/local/share/keyrings/postgres.gpg.asc
+test -f "$pgdg_key" || {
+	echo "error: expected the PGDG signing key at $pgdg_key" >&2
+	exit 1
+}
+printf 'deb [ signed-by=%s ] https://apt-archive.postgresql.org/pub/repos/apt bookworm-pgdg-archive main\n' \
+	"$pgdg_key" >/etc/apt/sources.list.d/pgdg-archive.list
 
 # Jansson and libjwt are not installed from Debian: the module embeds them and
 # requires PIC static archives. Use scripts/ci/install-jansson.sh and

@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     container:
-      image: postgres:19rc1-bookworm@sha256:228dc3e5a9bd18343efeecc7ae3f52aee9b6cf3a9dca5159ece1eef254a80f06
+      image: postgres:19.0-bookworm@sha256:f4859caf96de494e38efa69ed703b08a5bbd9605e152e604f2daec8841c87c41
 
     steps:
       - name: Bootstrap trusted Git checkout
