@@ -157,7 +157,7 @@ make fuzz-smoke
 make packagecheck
 ```
 
-Pass `PG_CONFIG` when needed. Formatting uses pinned PostgreSQL 19 beta 3
+Pass `PG_CONFIG` when needed. Formatting uses pinned PostgreSQL 19.0
 `pgindent`, `pg_bsd_indent` 2.1.3 and the checked-in typedef list. Its installer
 requires a compiler, Bison and Flex and writes under `.tools/`. `make format`
 applies formatting. Sanitizers require Clang ASan/UBSan runtimes; fuzz smoke

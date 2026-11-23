@@ -97,7 +97,7 @@ considered.
 
 | Component | Use | License |
 | --- | --- | --- |
-| `pgindent` and `pg_bsd_indent` from the PostgreSQL 19 beta 3 source tarball, fetched with a pinned SHA-256 by [`scripts/ci/install-pgindent.sh`](scripts/ci/install-pgindent.sh) | C formatting checks | PostgreSQL License |
+| `pgindent` and `pg_bsd_indent` from the PostgreSQL 19.0 source tarball, fetched with a pinned SHA-256 by [`scripts/ci/install-pgindent.sh`](scripts/ci/install-pgindent.sh) | C formatting checks | PostgreSQL License |
 | CMake, GCC/Clang, and the Debian build toolchain | Building the module and its pinned static archives | Per operating system distribution |
 | `postgres` container images, pinned by digest in the CI workflows and in the `POSTGRES_IMAGE` base of [`tools/dev/Containerfile`](tools/dev/Containerfile) and [`demo/Containerfile`](demo/Containerfile) | Development, integration tests, and local demo | PostgreSQL License, on a Debian base |
 | Keycloak 26.5.0, pinned by digest in [`tests/interop/keycloak/compose.yml`](tests/interop/keycloak/compose.yml) and [`compose.yml`](compose.yml) | Optional provider interoperability suite and local demo | Apache License 2.0 |

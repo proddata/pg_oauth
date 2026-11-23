@@ -2,8 +2,8 @@
 
 set -eu
 
-PGINDENT_VERSION=19beta3
-PGINDENT_SHA256=ea4ad8933121930a58f23c73dc99c26a4184faca26faefa77d15ce0fba7dfe2c
+PGINDENT_VERSION=19.0
+PGINDENT_SHA256=a89fd70efbad6a08c7dbed8d4872e3af30170d9e5ca9dc7906523be95b4e692d
 PGINDENT_URL="https://ftp.postgresql.org/pub/source/v${PGINDENT_VERSION}/postgresql-${PGINDENT_VERSION}.tar.bz2"
 
 repo_root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)

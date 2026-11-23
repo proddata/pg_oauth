@@ -16,7 +16,7 @@ case "$#:$*" in
 esac
 
 repo_root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
-tool_root=${PGINDENT_INSTALL_ROOT:-$repo_root/.tools/pgindent-19beta3}
+tool_root=${PGINDENT_INSTALL_ROOT:-$repo_root/.tools/pgindent-19.0}
 pgindent=$tool_root/bin/pgindent
 pg_bsd_indent=$tool_root/bin/pg_bsd_indent
 postgres_typedefs=$tool_root/share/postgresql.typedefs

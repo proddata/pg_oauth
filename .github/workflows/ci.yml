@@ -70,25 +70,25 @@ jobs:
             target: "test-pg18"
             compiler: GCC
             cc: gcc
-            image: postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af
+            image: postgres:18.7-bookworm@sha256:194e55feb2597b1465dbee81cc9fd8d204566cd2eb42c8d22fd6c931a38781b1
           - pg: "18"
             package: "18"
             target: "test-pg18"
             compiler: Clang
             cc: clang
-            image: postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af
-          - pg: "19 RC1"
+            image: postgres:18.7-bookworm@sha256:194e55feb2597b1465dbee81cc9fd8d204566cd2eb42c8d22fd6c931a38781b1
+          - pg: "19"
             package: "19"
             target: "test-pg19"
             compiler: GCC
             cc: gcc
-            image: postgres:19rc1-bookworm@sha256:228dc3e5a9bd18343efeecc7ae3f52aee9b6cf3a9dca5159ece1eef254a80f06
-          - pg: "19 RC1"
+            image: postgres:19.0-bookworm@sha256:f4859caf96de494e38efa69ed703b08a5bbd9605e152e604f2daec8841c87c41
+          - pg: "19"
             package: "19"
             target: "test-pg19"
             compiler: Clang
             cc: clang
-            image: postgres:19rc1-bookworm@sha256:228dc3e5a9bd18343efeecc7ae3f52aee9b6cf3a9dca5159ece1eef254a80f06
+            image: postgres:19.0-bookworm@sha256:f4859caf96de494e38efa69ed703b08a5bbd9605e152e604f2daec8841c87c41
     container:
       image: ${{ matrix.image }}
 
@@ -112,7 +112,7 @@ jobs:
         run: CC=${{ matrix.cc }} ./scripts/ci/install-libjwt.sh
 
       - name: Validate libjwt behavior under sanitizers
-        if: ${{ needs.changes.outputs.docs_only != 'true' && (matrix.pg == '19 RC1' && matrix.compiler == 'Clang') }}
+        if: ${{ needs.changes.outputs.docs_only != 'true' && (matrix.pg == '19' && matrix.compiler == 'Clang') }}
         run: |
           make sanitizercheck
           make fuzz-smoke
@@ -146,19 +146,19 @@ jobs:
       matrix:
         include:
           - pg: "15"
-            image: postgres:15.19-bookworm@sha256:19b8449e2187e8a174b40c8832a7ed9da45813b74c2779b1c614e7e7d0ee47f0
+            image: postgres:15.20-bookworm@sha256:8180c3e1b9b603d2988f937dfbe51008bad5c4b07c77f35119695c027a7315ab
             both: false
           - pg: "16"
-            image: postgres:16.15-bookworm@sha256:5264710be20f409750ac6dc4e5706dcef929c87e241605463f0f9aefa932a8d9
+            image: postgres:16.16-bookworm@sha256:ce3efec6bc404f6b15ebf5d9bed6b45a9d4655aea238d7dacc3467ccb05a1175
             both: false
           - pg: "17"
-            image: postgres:17.11-bookworm@sha256:665dc7b37ac52a17e298511414c21d23ffa4e6a6ef6225b3e5d59c7afb35e994
+            image: postgres:17.12-bookworm@sha256:837bed18782820fe967067cb5328b02b0d9992c1be9a37ee0c9c492cfc03af3b
             both: false
           - pg: "18"
-            image: postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af
+            image: postgres:18.7-bookworm@sha256:194e55feb2597b1465dbee81cc9fd8d204566cd2eb42c8d22fd6c931a38781b1
             both: true
           - pg: "19"
-            image: postgres:19rc1-bookworm@sha256:228dc3e5a9bd18343efeecc7ae3f52aee9b6cf3a9dca5159ece1eef254a80f06
+            image: postgres:19.0-bookworm@sha256:f4859caf96de494e38efa69ed703b08a5bbd9605e152e604f2daec8841c87c41
             both: true
     container:
       image: ${{ matrix.image }}
@@ -227,7 +227,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     container:
-      image: postgres:19rc1-bookworm@sha256:228dc3e5a9bd18343efeecc7ae3f52aee9b6cf3a9dca5159ece1eef254a80f06
+      image: postgres:19.0-bookworm@sha256:f4859caf96de494e38efa69ed703b08a5bbd9605e152e604f2daec8841c87c41
 
     steps:
       - name: Check out repository

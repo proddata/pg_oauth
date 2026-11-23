@@ -128,6 +128,13 @@ DEPENDENCY_SANITIZER_FLAGS = -fsanitize=address,undefined -fno-omit-frame-pointe
 endif
 
 PG_CONFIG ?= pg_config
+# PGDG's EL10 PostgreSQL 18 development package hardcodes LLVM 21 tool paths
+# (LLVM_BINPATH), but Rocky Linux 10 ships only LLVM 22, so installing the
+# optional JIT bitcode fails. PG_OAUTH_WITH_LLVM=no skips bitcode for that
+# platform; PGXS would otherwise force with_llvm=yes from Makefile.global.
+ifeq ($(PG_OAUTH_WITH_LLVM),no)
+override with_llvm = no
+endif
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 

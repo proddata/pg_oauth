@@ -4,7 +4,7 @@ set -eu
 repository=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 runtime_dir="$repository/build/interop/keycloak"
 compose_file="$repository/tests/interop/keycloak/compose.yml"
-pg_image="postgres:19rc1-bookworm@sha256:228dc3e5a9bd18343efeecc7ae3f52aee9b6cf3a9dca5159ece1eef254a80f06"
+pg_image="postgres:19.0-bookworm@sha256:f4859caf96de494e38efa69ed703b08a5bbd9605e152e604f2daec8841c87c41"
 
 mkdir -p "$runtime_dir"
 openssl req -x509 -newkey rsa:2048 -nodes \

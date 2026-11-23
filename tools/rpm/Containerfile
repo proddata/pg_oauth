@@ -3,6 +3,7 @@ FROM ${BASE_IMAGE}
 
 ARG RPM_PLATFORM
 ARG PG_CONFIG_PATH
+ARG PG_OAUTH_WITH_LLVM=yes
 
 ENV PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig:/usr/local/lib/pkgconfig
 
@@ -21,6 +22,7 @@ COPY tools/dev/run-tests.sh ./tools/dev/run-tests.sh
 
 ENV PG_MAJOR=18
 ENV PG_CONFIG_PATH=${PG_CONFIG_PATH}
+ENV PG_OAUTH_WITH_LLVM=${PG_OAUTH_WITH_LLVM}
 ENV LD_LIBRARY_PATH=/usr/local/lib
 ARG BASE_IMAGE
 ARG BUILD_SOURCE_REVISION
