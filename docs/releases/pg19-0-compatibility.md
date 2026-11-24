@@ -6,8 +6,8 @@
 - **Debian snapshot:** `20261104T212339Z`
 - **Reviewed revision:** `1f1e6b1409c72ae1be46d0b6a20a519563986437` (merged as `a829cf1`)
 - **Architecture tested locally:** `aarch64`; CI also covers `x86_64`
-- **Status:** evidence recorded; support-status labels unchanged pending
-  maintainer approval of this record
+- **Status:** source review, CI and package rehearsal recorded; support-status
+  labels unchanged pending maintainer approval of this record
 
 PostgreSQL 19.0 was released on 2026-11-19, together with the 18.7, 17.12,
 16.16 and 15.20 minor releases. This record covers the
@@ -84,15 +84,60 @@ Rocky Linux 10 needed two input changes first: PGDG replaced its
 LLVM 21 while Rocky ships LLVM 22, so that build omits the optional LLVM
 bitcode (see [RPM platforms](../rpm-platforms.md#enterprise-linux-10-bitcode)).
 
+## Release-package rehearsal
+
+The manual `release-candidate` workflow
+([run 45233407692](https://github.com/proddata/pg_oauth/actions/runs/45233407692),
+version `0.2.1-rc.1`, revision `566fdfcbf56d808b7622491a4af4d84686cc4b68`)
+built the PostgreSQL 18.7 and 19.0 archives and passed its Keycloak
+interoperability and recovery rehearsal. The module sources (`validator/`,
+`shared/`, `pam/`) are identical to `v0.2.0`; this candidate differs only in
+build inputs (PostgreSQL 18.7/19.0 headers, Debian snapshot, OpenSSL 3.0.22).
+
+For each major, in a disposable container from the pinned development image
+(`linux/amd64`, matching the CI-built archives, emulated on an `aarch64` host),
+using the published `0.2.0` archive for that major as the previous package
+(PostgreSQL 18.6, and 19 RC1):
+
+1. every file of both archives matched its `BUILD-MANIFEST` SHA-256;
+2. clean install of the previous package, installed digests re-verified, then
+   the installed-library integration suite;
+3. upgrade: previous files removed, new package installed, installed digests
+   verified against the new manifest, no file of the previous package left
+   behind, suite repeated;
+4. rollback: new files removed, previous package restored, digests re-verified
+   against the previous manifest, suite repeated.
+
+| Major | Previous package | New package | Restored previous |
+|---|---|---|---|
+| 19 | 59 passed | 59 passed | 59 passed |
+| 18 | 57 passed, 2 skipped | 57 passed, 2 skipped | 57 passed, 2 skipped |
+
+The skipped tests are the PostgreSQL-19-only ones. The suite is the
+`not slow` selection used by `dev-test-pgNN`. The libraries under test had
+different digests before and after the upgrade, and the restored library
+matched the baseline digest.
+
+An earlier attempt of this rehearsal reported success while every suite run
+failed (an `aarch64` container loading `x86_64` archives, and a script that did
+not check `make`'s exit status). It was discarded; the results above come from
+the corrected script, which stops on any failing suite.
+
 ## Not yet done
 
 These release-readiness gates were **not** run for 19.0 and block relabeling
 PostgreSQL 19 as a production target:
 
-- clean-installation, PostgreSQL 18 coexistence and upgrade/rollback
-  rehearsals with a 19.0-built release package;
-- a release-candidate build of the PostgreSQL 19.0 archive (the manually
-  dispatched `release-candidate` workflow was not run);
+- PostgreSQL 18 and 19 coexistence on one host: each major was installed in
+  its own container, so a combined install was not exercised;
+- a long-lived-cluster restart across the upgrade: the suite starts and
+  restarts its own servers for each case, but no persistent cluster with real
+  data was carried across the package replacement;
+- verification of the `0.2.0` release signatures (the previous archives were
+  checked against their own manifests only) and of the `0.2.1` signing, which
+  has not happened because nothing was released;
+- RPM and Rocky Linux package rehearsals for 19.0 (RPM packaging targets
+  PostgreSQL 18 only);
 - maintainer approval of this evidence.
 
 Until those pass, PostgreSQL 19 keeps its preview labeling in
