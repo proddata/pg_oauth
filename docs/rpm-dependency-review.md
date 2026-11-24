@@ -4,8 +4,9 @@ Historical review: dependency/security and license review was reported complete
 by the deployment owner on 2026-10-24. Subsequent validation, signing and
 prerelease approval are recorded in the [published 0.1.3 release](releases/0.1.3-prerelease.md).
 This dependency review is not itself a signed release approval and does not
-resolve vendor security findings. The scoped Rocky exception and production
-retention requirements below still apply.
+resolve vendor security findings. The scoped Rocky exception below was closed on
+2026-11-24 (see [its closure record](#exception-closure-2026-11-24)); the production
+retention requirements still apply.
 
 ## Reviewed inputs and evidence
 
@@ -213,6 +214,36 @@ not independent review, and no new evidence, vendor patch confirmation or
 reproduced analysis was supplied with that statement. The 2026-11-22 deadline
 still applies: after it, promotion is blocked until a fix is verified or a new
 explicit review is recorded.
+
+### Exception closure, 2026-11-24
+
+The exception expired on 2026-11-22. No release was published between its expiry
+and this closure (the latest tag is `v0.2.0`). A fix is now available and the
+locked builders carry it, so the exception is closed rather than renewed.
+
+Fix evidence, checked on 2026-11-24:
+
+- Rocky Linux advisory `RLSA-2026:98588` (updated 2026-11-23) lists
+  `CVE-2026-35189` and ships `openssl 1:3.5.9-1.el10_3`. Red Hat's CVE record
+  lists the same fix as `RHSA-2026:98588` for RHEL 10.3 (released 2026-11-11).
+  Upstream fixed the issue in OpenSSL 3.5.9.
+- A fresh capture ([run 45354864080](https://github.com/proddata/pg_oauth/actions/runs/45354864080),
+  revision `566fdfcbf56d808b7622491a4af4d84686cc4b68`) froze all six builders.
+  The retained Rocky inventories for both x86-64 and ARM64 record
+  `openssl`, `openssl-libs`, `openssl-devel` and `openssl-fips-provider`
+  `1:3.5.9-1.el10_3`, `libcurl-minimal` and `curl` `8.12.1-9.el10_3`, and
+  `postgresql18*` `18.7-1PGDG.rhel10.2`.
+- The new [lock](../packaging/rpm/builders.lock.json) has SHA-256
+  `30a8f0e5843c54b8134a03e97a944aa46ce8ef41ad029e74c734bd3671a89103` and passes
+  the repository's lock validation. It replaces the lock from run 42306639206,
+  which stays in Git history.
+
+Limits: this is vendor-advisory and package-inventory evidence, not an
+independent reproduction. It covers the build and test environment. A deployed
+Rocky host is protected only if it has installed OpenSSL `1:3.5.9-1.el10_3` or
+later, which operators must verify themselves. The Fedora 43 and 44 builders in
+this capture still resolve PostgreSQL 18.6, because the Fedora repositories had
+no 18.7 package when queried; the project's RPM minimum is unchanged.
 
 ## Owner review completion, 2026-10-24
 
